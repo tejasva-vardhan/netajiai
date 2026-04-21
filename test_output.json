@@ -1,0 +1,31 @@
+{
+  "complaint": {
+    "complaint_id": "NETA-20260312-87452DEA",
+    "user": {
+      "user_id": "test_user_123",
+      "phone": "9876543210"
+    },
+    "complaint_data": {
+      "issue_type": "safai",
+      "description": "10 din se safai nahi hui hai",
+      "location": "test area, shivpuri",
+      "ward": null,
+      "landmark": null,
+      "photo_available": false,
+      "photo_path": null
+    },
+    "metadata": {
+      "submitted_at": "2026-03-12T00:53:34.975022",
+      "language": "hindi"
+    },
+    "department": {
+      "name": "संबंधित विभाग",
+      "code": "GEN",
+      "email": "complaints@shivpuri.nic.in"
+    },
+    "status": {
+      "current": "submitted",
+      "submitted_at": "2026-03-12T00:53:34.975022"
+    }
+  }
+}

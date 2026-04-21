@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: aineta-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      # Override in shell or a local `.env` file loaded by Compose: `POSTGRES_PASSWORD=... docker compose up`
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev_not_for_production}
+      POSTGRES_DB: aineta
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data_new:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_new:
+

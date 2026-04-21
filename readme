@@ -1,0 +1,91 @@
+# AI NETA - Terminal Chatbot
+
+शिवपुरी नगर निगम के लिए AI चैटबॉट
+
+## Installation
+
+1. Clone this folder
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+
+   ai-neta-chatbot/
+│
+├── 📁 **aineta.venv/**                 # Virtual environment (ignored in git)
+│
+├── 📁 **__pycache__/**                  # Python cache files (ignored in git)
+│
+├── 📁 **frontend/**                      # Next.js Frontend (optional)
+│   ├── 📁 app/
+│   │   ├── 📁 components/
+│   │   │   ├── ChatBot.jsx
+│   │   │   ├── ComplaintForm.jsx
+│   │   │   └── VoiceControls.jsx
+│   │   ├── 📁 pages/
+│   │   │   ├── index.js
+│   │   │   └── complaint.js
+│   │   └── layout.js
+│   ├── next.config.mjs
+│   ├── next-env.d.ts
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── postcss.config.mjs
+│   ├── tailwind.config.ts
+│   └── tsconfig.json
+│
+├── 📁 **photos/**                        # Uploaded complaint photos
+│   ├── complaint_20260312_010358_abc.png
+│   └── ...
+│
+├── 📄 **.env**                            # Environment variables (API keys)
+├── 📄 **.env.example**                     # Example env file
+├── 📄 **.gitignore**                       # Git ignore file
+│
+│   ## CORE BOT FILES (Required)
+├── 📄 **bot.py**                           # Main AINetaBot class
+├── 📄 **complaint.py**                      # ComplaintData model
+├── 📄 **utils.py**                          # Helper functions (department mapping, language detection)
+├── 📄 **config.py**                         # Configuration loader
+│
+│   ## DATABASE FILES (Optional - for persistence)
+├── 📄 **database.py**                       # Database connection
+├── 📄 **models.py**                          # SQLAlchemy models
+├── 📄 **complaints_data.json**               # JSON backup storage
+│
+│   ## API SERVER (For frontend integration)
+├── 📄 **main.py**                            # FastAPI server
+├── 📄 **requirements.txt**                    # Python dependencies
+├── 📄 **docker-compose.yml**                   # Docker configuration
+│
+│   ## TERMINAL TEST FILES (For debugging)
+├── 📄 **terminal_test.py**                     # Full test with debug
+├── 📄 **terminal_prod.py**                      # Clean terminal version (no debug)
+├── 📄 **terminal_simple.py**                     # Ultra simple version
+├── 📄 **chat.py**                                # Clean chat with debug filtering
+├── 📄 **test_json.py**                           # JSON generation test
+├── 📄 **reset_json.py**                          # Reset complaints file
+├── 📄 **test_groq.py**                            # Groq API test
+│
+│   ## ONLINE VOICE FILES (Using Google Speech Recognition)
+├── 📄 **voice_bot.py**                            # Full voice support (online)
+├── 📄 **simple_voice.py**                          # Simple voice version
+├── 📄 **test_mic.py**                                # Microphone test
+│
+│   ## DOCUMENTATION
+├── 📄 **README.md**                                 # Main documentation
+└── 📄 **requirements-voice.txt**                     # Voice dependencies (optional)
+
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Test basic bot
+python chat.py
+
+# 3. Test with voice
+python simple_voice.py
+
+# 4. Full voice experience
+python voice_bot.py
+
+# 5. Start API server (for frontend)
+uvicorn main:app --reload --port 8000

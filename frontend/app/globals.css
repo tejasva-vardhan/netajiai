@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f0f2f5;
+  --foreground: #111;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+/* Leaflet geosearch control tweaks for chat map UI */
+.leaflet-control-geosearch {
+  width: min(300px, calc(100% - 24px));
+}
+
+.leaflet-control-geosearch form {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.leaflet-control-geosearch input {
+  font-size: 13px;
+  padding: 8px 10px;
+}

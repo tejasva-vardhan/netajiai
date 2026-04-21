@@ -1,0 +1,50 @@
+# --- Secrets & local env (never commit real values) ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+!BACKEND.env.example
+!FRONTEND.env.example
+
+# Tool-specific env / credentials
+.envrc
+.direnv/
+*.pem
+*.key
+credentials.json
+*-credentials.json
+*-service-account.json
+
+# --- Python ---
+venv/
+__pycache__/
+**/venv/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+**/*.egg-info/
+**/dist/
+**/build/
+
+# --- App-generated / local data ---
+**/photos/
+**/uploads/
+**/complaints_data.json
+
+# --- Node.js & Next.js ---
+.next/
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/.vercel/
+
+# --- OS & editors ---
+**/.DS_Store
+**/Thumbs.db
+.idea/
+*.swp
+*.swo
