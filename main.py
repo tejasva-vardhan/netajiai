@@ -14,10 +14,14 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile, File, Form, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+except Exception as exc:
+    AudioSegment = None  # type: ignore[assignment]
+    print(f"WARNING: Optional audio dependency pydub unavailable: {exc}")
 import speech_recognition as sr
 
 from bot import AINetaBot
@@ -46,18 +50,14 @@ app = FastAPI(title="AI NETA")
 _admin_auth_warned = False
 
 # CORS: comma-separated browser origins (e.g. https://yourapp.vercel.app).
-# If unset or empty, default to local Next.js dev origins (not "*").
-_DEFAULT_DEV_ORIGINS = (
-    "http://localhost:3000,http://127.0.0.1:3000,"
-    "http://localhost:3001,http://127.0.0.1:3001"
-)
+# If unset or empty, allow all origins as a safe deployment fallback.
 _allowed_origins_env = (os.getenv("ALLOWED_ORIGINS") or "").strip()
 if _allowed_origins_env:
     _cors_list = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
 else:
-    _cors_list = [o.strip() for o in _DEFAULT_DEV_ORIGINS.split(",") if o.strip()]
+    _cors_list = ["*"]
     print(
-        "INFO: ALLOWED_ORIGINS not set — using default local dev origins. "
+        "INFO: ALLOWED_ORIGINS not set — defaulting to allow all origins ['*']. "
         "Set ALLOWED_ORIGINS in production (comma-separated, e.g. https://yourapp.vercel.app)."
     )
 
@@ -784,11 +784,11 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     type: str
     reply: str
-    json: Dict[str, Any] | None = None
+    response_json: Dict[str, Any] | None = Field(default=None, alias="json")
     error: str | None = None
     transcript: str | None = None
     field: str | None = None
@@ -802,6 +802,10 @@ def _transcribe_audio_file(upload: UploadFile) -> str | None:
 
     Note: Wrapped in try/finally to always cleanup temp files.
     """
+    if AudioSegment is None:
+        print("❌ [STT] pydub is unavailable; voice transcription disabled on this server")
+        return None
+
     recognizer = sr.Recognizer()
 
     unique_id = uuid4().hex
@@ -866,7 +870,7 @@ def _persist_complaint_if_any(
     if bot_response.get("type") != "complaint_registered":
         return
 
-    complaint_wrapper = bot_response.get("json")
+    complaint_wrapper = _extract_response_json(bot_response)
     if not complaint_wrapper:
         return
 
@@ -940,6 +944,19 @@ def _persist_complaint_if_any(
     save_complaint_to_file(complaint_wrapper)
 
 
+def _extract_response_json(payload: Dict[str, Any]) -> Dict[str, Any] | None:
+    """
+    Backward/forward compatible JSON field lookup for bot payloads.
+    """
+    candidate = payload.get("response_json")
+    if isinstance(candidate, dict):
+        return candidate
+    candidate = payload.get("json")
+    if isinstance(candidate, dict):
+        return candidate
+    return None
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(
     payload: ChatRequest,
@@ -974,7 +991,10 @@ def chat(
 
         print(f"🔍 [API] Bot response type: {bot_response.get('type')}")
         if bot_response.get("type") == "complaint_registered":
-            print(f"🔍 [API] Complaint registered! JSON keys: {bot_response.get('json', {}).keys()}")
+            print(
+                f"🔍 [API] Complaint registered! JSON keys: "
+                f"{(_extract_response_json(bot_response) or {}).keys()}"
+            )
         elif bot_response.get("type") == "error":
             print(f"🔍 [API] Error: {bot_response.get('error')}")
 
@@ -993,7 +1013,7 @@ def chat(
             print("🔍 [API] Complaint persisted to database and JSON file")
 
             # Schedule email notification in the background
-            complaint_wrapper = bot_response.get("json") or {}
+            complaint_wrapper = _extract_response_json(bot_response) or {}
             complaint_payload = complaint_wrapper.get("complaint") or complaint_wrapper
 
             complaint_info = complaint_payload.get("complaint_data", {}) or {}
@@ -1056,7 +1076,7 @@ async def chat_voice(
         )
 
         if bot_response.get("type") == "complaint_registered":
-            complaint_wrapper = bot_response.get("json") or {}
+            complaint_wrapper = _extract_response_json(bot_response) or {}
             complaint_payload = complaint_wrapper.get("complaint") or complaint_wrapper
             complaint_info = complaint_payload.get("complaint_data", {}) or {}
             issue_type = complaint_info.get("issue_type") or "default"
@@ -1121,7 +1141,7 @@ async def chat_photo(
         )
 
         if bot_response.get("type") == "complaint_registered":
-            complaint_wrapper = bot_response.get("json") or {}
+            complaint_wrapper = _extract_response_json(bot_response) or {}
             complaint_payload = complaint_wrapper.get("complaint") or complaint_wrapper
             complaint_info = complaint_payload.get("complaint_data", {}) or {}
             issue_type = complaint_info.get("issue_type") or "default"
@@ -1151,6 +1171,11 @@ def api_public_config() -> Dict[str, Any]:
     `dev_safe_inbox` matches the SMTP recipient lock in email_service.
     """
     return {"dev_safe_inbox": DEV_SAFE_INBOX}
+
+
+@app.get("/")
+def root_status() -> Dict[str, str]:
+    return {"status": "online", "message": "AI Neta API is live"}
 
 
 @app.get("/health")
