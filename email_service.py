@@ -1,5 +1,7 @@
 import os
 import smtplib
+import socket
+import ssl
 
 from dotenv import load_dotenv
 
@@ -309,12 +311,23 @@ def send_otp_email(email: str, otp: str) -> None:
     msg["From"] = DEFAULT_MAIL_FROM
     msg["To"] = to_email
 
+    smtp_host = "smtp.gmail.com"
+    smtp_ipv4 = socket.gethostbyname(smtp_host)
+    tls_context = ssl.create_default_context()
+
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        # Connect via forced IPv4, but keep TLS hostname verification bound to smtp.gmail.com.
+        with smtplib.SMTP(smtp_ipv4, 587, timeout=30) as server:
             server.ehlo()
-            server.starttls()
+            server._host = smtp_host
+            server.starttls(context=tls_context)
+            server.ehlo()
             server.login(smtp_username, smtp_password)
             server.send_message(msg)
+    except OSError as exc:
+        print(f"CRITICAL: RENDER PORT BLOCKED")
+        print(f"❌ OTP email send failed for {to_email}: {type(exc).__name__}: {exc}")
+        raise
     except Exception as exc:
         print(f"❌ OTP email send failed for {to_email}: {type(exc).__name__}: {exc}")
         raise
