@@ -309,8 +309,12 @@ def send_otp_email(email: str, otp: str) -> None:
     msg["From"] = DEFAULT_MAIL_FROM
     msg["To"] = to_email
 
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(smtp_username, smtp_password)
-        server.send_message(msg)
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.send_message(msg)
+    except Exception as exc:
+        print(f"❌ OTP email send failed for {to_email}: {type(exc).__name__}: {exc}")
+        raise

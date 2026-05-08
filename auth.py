@@ -45,7 +45,10 @@ def _auth_secret() -> str:
     if secret:
         return secret
     if not _auth_secret_warned:
-        print("WARNING: AUTH_SECRET_KEY not set; using temporary insecure default for local dev.")
+        print(
+            "ERROR: AUTH_SECRET_KEY is missing; using temporary insecure fallback "
+            "for local development only."
+        )
         _auth_secret_warned = True
     return "dev-insecure-auth-secret-change-me"
 
@@ -158,9 +161,10 @@ def send_otp(payload: SendOTPRequest, db: Session = Depends(get_db)):
 
     try:
         send_otp_email(email, otp)
-    except Exception:
-        # Do not leak delivery/system details from auth endpoint.
-        raise HTTPException(status_code=500, detail="Could not process OTP request.")
+    except Exception as exc:
+        print(f"OTP delivery failed for {email}: {type(exc).__name__}: {exc}")
+        # Keep API response generic; exact failure is logged above.
+        raise HTTPException(status_code=500, detail="Could not process OTP request.") from exc
 
     return {
         "ok": True,

@@ -28,10 +28,11 @@ def get_database_url() -> str:
         raise RuntimeError(
             "DATABASE_URL is not set. Please configure it in your environment."
         )
-    # Normalize common PostgreSQL URL variants
-    # e.g. "postgres://..." -> "postgresql+psycopg://..."
+    # Normalize common PostgreSQL URL variants.
+    # Explicitly rewrite legacy provider URLs:
+    # "postgres://..." -> "postgresql://..."
     if db_url.startswith("postgres://"):
-        db_url = "postgresql+psycopg://" + db_url[len("postgres://") :]
+        db_url = "postgresql://" + db_url[len("postgres://") :]
     elif db_url.startswith("postgresql://") and "+psycopg" not in db_url:
         db_url = "postgresql+psycopg://" + db_url[len("postgresql://") :]
     elif db_url.startswith("postgresql+psycopg2://"):
