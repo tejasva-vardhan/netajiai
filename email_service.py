@@ -1,14 +1,10 @@
 import os
-import smtplib
-import socket
-import ssl
+import base64
 
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import resend
 from typing import Any, Dict, NamedTuple, Tuple
 
 from sqlalchemy.orm import Session
@@ -21,6 +17,39 @@ from models import Department, OfficerMapping
 _raw_dev = (os.getenv("DEV_SAFE_INBOX") or "").strip()
 DEV_SAFE_INBOX = _raw_dev or "dev-safe-inbox@example.invalid"
 DEFAULT_MAIL_FROM = (os.getenv("MAIL_FROM") or "").strip() or "noreply@example.invalid"
+RESEND_FROM = "AI Neta <onboarding@resend.dev>"
+RESEND_REPLY_TO = "tejasvvardhans@gmail.com"
+resend.api_key = os.environ.get("RESEND_API_KEY")
+
+
+def send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[dict[str, str]] | None = None,
+) -> None:
+    """
+    Send an HTML email via Resend.
+    """
+    to_email = (recipient or "").strip()
+    if not to_email:
+        raise ValueError("Recipient email is required")
+    if not resend.api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured.")
+
+    try:
+        payload: dict[str, Any] = {
+            "from": RESEND_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "html": body,
+            "reply_to": RESEND_REPLY_TO,
+        }
+        if attachments:
+            payload["attachments"] = attachments
+        resend.Emails.send(payload)
+    except Exception as exc:
+        raise RuntimeError(f"Resend email send failed: {exc}") from exc
 
 # Map common LLM / user variants to canonical Department.keyword values in the DB.
 ISSUE_KEYWORD_ALIASES: Dict[str, str] = {
@@ -133,16 +162,13 @@ def send_complaint_email(
     city_id: int | None = None,
 ) -> None:
     """
-    Send a formatted complaint email via Gmail SMTP.
+    Send a formatted complaint email via Resend HTTP API.
 
     Routing uses OfficerMapping + Department in the database (city_id + keyword).
     Recipients are always DEV_SAFE_INBOX until production unlock.
     """
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-
-    if not smtp_username or not smtp_password:
-        print("⚠️ SMTP not configured correctly. Skipping email dispatch.")
+    if not resend.api_key:
+        print("⚠️ RESEND_API_KEY not configured. Skipping email dispatch.")
         return
 
     # Normalise complaint payload (support both wrapped and flat structures)
@@ -243,36 +269,22 @@ def send_complaint_email(
             if os.path.isfile(resolved):
                 attachment_path = resolved
 
+    attachments: list[dict[str, str]] | None = None
     if attachment_path:
-        msg = MIMEMultipart("mixed")
-        body_root = MIMEMultipart("alternative")
-        body_root.attach(MIMEText(html_body, "html", "utf-8"))
-        msg.attach(body_root)
         try:
-            with open(attachment_path, "rb") as img_f:
-                image_part = MIMEImage(img_f.read())
-            image_part.add_header(
-                "Content-Disposition",
-                "attachment",
-                filename=os.path.basename(attachment_path),
-            )
-            msg.attach(image_part)
+            with open(attachment_path, "rb") as photo_file:
+                base64_encoded_string = base64.b64encode(photo_file.read()).decode("ascii")
+            attachments = [
+                {
+                    "filename": "complaint_photo.jpg",
+                    "content": base64_encoded_string,
+                }
+            ]
         except OSError as attach_err:
             print(f"⚠️ Could not attach complaint photo ({attachment_path}): {attach_err}")
-    else:
-        msg = MIMEMultipart("alternative")
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-    msg["Subject"] = subject
-    msg["From"] = DEFAULT_MAIL_FROM
-    msg["To"] = to_email
 
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.send_message(msg)
+        send_email(to_email, subject, html_body, attachments=attachments)
         print(f"✅ Complaint email sent successfully for {complaint_id} to {to_email}")
     except Exception as exc:
         # Log the error but do not raise, to avoid crashing the app
@@ -284,13 +296,11 @@ def send_otp_email(email: str, otp: str) -> None:
     Send OTP to the real user email.
     NOTE: This intentionally bypasses DEV_SAFE_INBOX because OTP must reach the citizen.
     """
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
     to_email = (email or "").strip()
     if not to_email:
         raise ValueError("Recipient email is required")
-    if not smtp_username or not smtp_password:
-        raise RuntimeError("SMTP not configured correctly for OTP delivery.")
+    if not resend.api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured for OTP delivery.")
 
     subject = "AI Neta Login OTP"
     html_body = f"""
@@ -305,29 +315,8 @@ def send_otp_email(email: str, otp: str) -> None:
     </html>
     """
 
-    msg = MIMEMultipart("alternative")
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-    msg["Subject"] = subject
-    msg["From"] = DEFAULT_MAIL_FROM
-    msg["To"] = to_email
-
-    smtp_host = "smtp.gmail.com"
-    smtp_ipv4 = socket.gethostbyname(smtp_host)
-    tls_context = ssl.create_default_context()
-
     try:
-        # Connect via forced IPv4, but keep TLS hostname verification bound to smtp.gmail.com.
-        with smtplib.SMTP(smtp_ipv4, 587, timeout=30) as server:
-            server.ehlo()
-            server._host = smtp_host
-            server.starttls(context=tls_context)
-            server.ehlo()
-            server.login(smtp_username, smtp_password)
-            server.send_message(msg)
-    except OSError as exc:
-        print(f"CRITICAL: RENDER PORT BLOCKED")
-        print(f"❌ OTP email send failed for {to_email}: {type(exc).__name__}: {exc}")
-        raise
+        send_email(to_email, subject, html_body)
     except Exception as exc:
         print(f"❌ OTP email send failed for {to_email}: {type(exc).__name__}: {exc}")
         raise
