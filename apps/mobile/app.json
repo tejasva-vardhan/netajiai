@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "AI Neta",
+    "slug": "ai-neta",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "aineta",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "AI Neta needs the camera to capture the civic issue now. We do not use gallery uploads for verified evidence."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "AI Neta uses your location to route this issue to the correct local department."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "AI Neta needs the microphone for your short voice note."
+        }
+      ],
+      "expo-web-browser",
+      "expo-background-task"
+    ],
+    "android": {
+      "package": "in.aineta.app"
+    },
+    "ios": {
+      "bundleIdentifier": "in.aineta.app"
+    }
+  }
+}

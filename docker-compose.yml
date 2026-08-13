@@ -1,20 +1,286 @@
-version: "3.9"
+name: aineta-local
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.5-alpine
     container_name: aineta-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      # Override in shell or a local `.env` file loaded by Compose: `POSTGRES_PASSWORD=... docker compose up`
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev_not_for_production}
-      POSTGRES_DB: aineta
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5435:5432"
     volumes:
-      - postgres_data_new:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8.0-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,DOCKER://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,DOCKER://kafka:29092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_TOPIC: ${KAFKA_TOPIC}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        /opt/kafka/bin/kafka-topics.sh
+        --bootstrap-server kafka:29092
+        --create --if-not-exists
+        --topic "$${KAFKA_TOPIC}"
+        --partitions 3
+        --replication-factor 1
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        && mc mb --ignore-existing "local/$${OBJECT_STORAGE_BUCKET}"
+        && mc anonymous set none "local/$${OBJECT_STORAGE_BUCKET}"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    restart: unless-stopped
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/realms/master >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  temporal:
+    image: temporalio/temporal:1.8.1
+    restart: unless-stopped
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/var/lib/temporal/temporal.db"]
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      - temporal_data:/var/lib/temporal
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7233"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    working_dir: /app/backend
+    command: ["alembic", "-c", "/app/backend/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    environment:
+      AI_PROVIDER: ${AI_PROVIDER}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+    command: ["uvicorn", "backend.app.runtime:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8001:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    command: ["aineta-outbox-worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  event-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    command: ["aineta-event-worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+  temporal-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    command: ["aineta-temporal-worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+  evidence-cleanup-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: .env
+    command: ["aineta-evidence-cleanup-worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_OIDC_ISSUER: ${NEXT_PUBLIC_OIDC_ISSUER}
+        NEXT_PUBLIC_OIDC_CLIENT_ID: ${NEXT_PUBLIC_OIDC_CLIENT_ID}
+        NEXT_PUBLIC_OIDC_SCOPES: ${NEXT_PUBLIC_OIDC_SCOPES}
+        NEXT_PUBLIC_OIDC_ADMIN_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_ADMIN_REDIRECT_URI}
+        NEXT_PUBLIC_OIDC_ADMIN_POST_LOGOUT_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_ADMIN_POST_LOGOUT_REDIRECT_URI}
+        NEXT_PUBLIC_OIDC_CITIZEN_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_CITIZEN_REDIRECT_URI}
+        NEXT_PUBLIC_OIDC_CITIZEN_POST_LOGOUT_REDIRECT_URI: ${NEXT_PUBLIC_OIDC_CITIZEN_POST_LOGOUT_REDIRECT_URI}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
 
 volumes:
-  postgres_data_new:
-
+  # Reuse the existing local development database created by the repository's
+  # previous Compose profile. The old volume remains recoverable if this
+  # profile is moved to a clean machine.
+  postgres_data:
+    name: ${POSTGRES_VOLUME_NAME:-netajiai_postgres_data_new}
+  redis_data:
+  kafka_data:
+  minio_data:
+  temporal_data:

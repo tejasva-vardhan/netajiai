@@ -1,0 +1,169 @@
+{
+  "realm": "aineta",
+  "enabled": true,
+  "displayName": "AI Neta Local",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "citizen", "description": "Local citizen account" },
+      { "name": "operator", "description": "Local department operator" },
+      { "name": "admin", "description": "Local platform administrator" },
+      { "name": "moderator", "description": "Local content moderator" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "aineta-api",
+      "name": "AI Neta API audience",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "aineta-web",
+      "name": "AI Neta local web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/auth/callback",
+        "http://localhost:3000/admin/auth/callback"
+      ],
+      "webOrigins": ["http://localhost:3000"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:3000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "aineta-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "aineta-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "aineta-realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "aineta-identity-verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "identity_verified",
+            "claim.name": "identity_verified",
+            "jsonType.label": "boolean",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "aineta-mobile",
+      "name": "AI Neta local mobile",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["aineta://auth/callback"],
+      "webOrigins": ["*"],
+      "protocolMappers": [
+        {
+          "name": "aineta-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "aineta-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "aineta-realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "aineta-identity-verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "identity_verified",
+            "claim.name": "identity_verified",
+            "jsonType.label": "boolean",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "local-citizen",
+      "enabled": true,
+      "email": "citizen@local.aineta",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Citizen",
+      "attributes": { "identity_verified": ["true"] },
+      "credentials": [{ "type": "password", "value": "local-citizen", "temporary": false }],
+      "realmRoles": ["citizen"]
+    },
+    {
+      "username": "local-operator",
+      "enabled": true,
+      "email": "operator@local.aineta",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Operator",
+      "attributes": { "identity_verified": ["true"] },
+      "credentials": [{ "type": "password", "value": "local-operator", "temporary": false }],
+      "realmRoles": ["operator"]
+    },
+    {
+      "username": "local-admin",
+      "enabled": true,
+      "email": "admin@local.aineta",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Admin",
+      "attributes": { "identity_verified": ["true"] },
+      "credentials": [{ "type": "password", "value": "local-admin", "temporary": false }],
+      "realmRoles": ["admin", "operator", "moderator"]
+    }
+  ]
+}

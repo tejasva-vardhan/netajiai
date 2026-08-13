@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-neta-backend"
+version = "0.1.0"
+description = "Production-oriented AI Neta civic grievance backend"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "agno==2.6.5",
+  "mistralai==2.9.2",
+  "confluent-kafka==2.15.0",
+  "redis==8.1.0",
+  "fastapi==0.136.1",
+  "pydantic==2.12.2",
+  "sqlalchemy==2.0.49",
+  "alembic==1.19.0",
+  "psycopg[binary]==3.3.4",
+  "boto3==1.43.64",
+  "PyJWT[crypto]==2.10.1",
+  "temporalio==1.31.0",
+  "opentelemetry-api==1.44.0",
+  "opentelemetry-sdk==1.44.0",
+  "opentelemetry-exporter-otlp-proto-http==1.44.0",
+  "uvicorn[standard]==0.30.0",
+  "httpx==0.28.1",
+]
+
+[project.scripts]
+aineta-outbox-worker = "backend.app.workers.outbox:main"
+aineta-temporal-worker = "backend.app.workers.temporal:main"
+aineta-event-worker = "backend.app.workers.events:main"
+aineta-evidence-cleanup-worker = "backend.app.workers.evidence:main"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=9,<10",
+  "pytest-asyncio>=1.2,<2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]

@@ -1,0 +1,297 @@
+{
+  "$defs": {
+    "ComplaintStatus": {
+      "enum": [
+        "received",
+        "verifying",
+        "routing_review",
+        "mapping_in_progress",
+        "sent",
+        "awaiting_response",
+        "escalated",
+        "fix_reported",
+        "awaiting_citizen_confirmation",
+        "closed",
+        "reopened",
+        "needs_clarification",
+        "not_accepted"
+      ],
+      "title": "ComplaintStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Versioned payload carried by the complaint lifecycle queue topic.",
+  "properties": {
+    "citizen_resolution_outcome": {
+      "anyOf": [
+        {
+          "enum": [
+            "fully_solved",
+            "partially_solved",
+            "not_solved"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Citizen Resolution Outcome"
+    },
+    "closure_proof_claim_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Closure Proof Claim Id"
+    },
+    "complaint_id": {
+      "format": "uuid",
+      "title": "Complaint Id",
+      "type": "string"
+    },
+    "disclosure_mode": {
+      "anyOf": [
+        {
+          "enum": [
+            "verified_citizen",
+            "public_name"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Disclosure Mode"
+    },
+    "disclosure_policy_version": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Disclosure Policy Version"
+    },
+    "escalation_level": {
+      "anyOf": [
+        {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Escalation Level"
+    },
+    "evidence_count": {
+      "anyOf": [
+        {
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Count"
+    },
+    "execution_zone_state": {
+      "anyOf": [
+        {
+          "enum": [
+            "active",
+            "mapping_in_progress"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Zone State"
+    },
+    "from_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ComplaintStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "issue_cluster_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issue Cluster Id"
+    },
+    "issue_cluster_supporter_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issue Cluster Supporter Count"
+    },
+    "issue_type": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issue Type"
+    },
+    "jurisdiction_code": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Jurisdiction Code"
+    },
+    "post_escalation_timeout_seconds": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Post Escalation Timeout Seconds"
+    },
+    "public_disclosure_eligible": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Disclosure Eligible"
+    },
+    "request_fingerprint": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Request Fingerprint"
+    },
+    "response_timeout_seconds": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response Timeout Seconds"
+    },
+    "routing_reason_code": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Routing Reason Code"
+    },
+    "routing_snapshot_ref": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Routing Snapshot Ref"
+    },
+    "sla_policy_version": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sla Policy Version"
+    },
+    "status": {
+      "$ref": "#/$defs/ComplaintStatus"
+    }
+  },
+  "required": [
+    "complaint_id",
+    "status"
+  ],
+  "title": "ComplaintLifecycleEvent",
+  "type": "object"
+}

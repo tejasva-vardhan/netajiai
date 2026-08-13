@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title>AI Neta</title>
+  <rect width="512" height="512" rx="112" fill="#0b6e4f"/>
+  <path d="M118 154h276v56H118zM118 228h184v56H118zM118 302h276v56H118z" fill="#fffdf7"/>
+  <circle cx="364" cy="256" r="44" fill="#f3b63f"/>
+</svg>

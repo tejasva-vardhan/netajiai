@@ -1,0 +1,14 @@
+# The backend image only needs its package metadata, lockfile, and backend code.
+# Keep secrets, client dependencies, caches, and generated artifacts out of the
+# backend Docker build context.
+*
+!pyproject.toml
+!requirements.lock
+!backend/
+!backend/**
+
+# The backend source is included above, so explicitly exclude any local
+# environment files that could otherwise be re-included by that rule.
+**/.env
+**/.env.*
+!**/.env.example

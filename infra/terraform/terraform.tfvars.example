@@ -1,0 +1,66 @@
+# Keep this false until the external launch gates in Section 21 are approved.
+enable_launch_profile = false
+
+aws_region  = "ap-south-1"
+project_name = "ai-neta"
+environment  = "staging"
+
+# Supply only through a private tfvars file or CI variable set; this example is
+# intentionally non-functional and contains no credentials.
+cluster_arn          = "arn:aws:ecs:ap-south-1:123456789012:cluster/ai-neta-staging"
+subnet_ids           = ["subnet-private-a", "subnet-private-b"]
+security_group_ids   = ["sg-application-private"]
+api_target_group_arn = "arn:aws:elasticloadbalancing:ap-south-1:123456789012:targetgroup/ai-neta-api/0000000000000000"
+image_digest         = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/ai-neta-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+evidence_bucket_name = "replace-with-unique-private-evidence-bucket"
+kms_key_arn          = "arn:aws:kms:ap-south-1:123456789012:key/00000000-0000-0000-0000-000000000000"
+
+common_environment = {
+  COMPOSITION_MODULE          = "deployment.adapters"
+  PUBLIC_DISCLOSURE_ENABLED   = "false"
+  PUBLIC_DISCLOSURE_POLICY_VERSION = "disclosure-policy.v1"
+  AI_PROVIDER                  = "approved-provider"
+  AI_MODEL                     = "approved-model"
+  AI_MONTHLY_REQUEST_LIMIT     = "1000"
+  VOICE_MONTHLY_REQUEST_LIMIT  = "250"
+  ALLOWED_ORIGINS              = "https://app.example"
+  DIGILOCKER_MODE               = "requester"
+  OTEL_EXPORTER_OTLP_ENDPOINT  = "http://otel-collector.internal:4318"
+  OTEL_SAMPLE_RATIO             = "0.25"
+  TEMPORAL_NAMESPACE            = "ai-neta-staging"
+  TEMPORAL_TARGET               = "temporal.example:7233"
+  TEMPORAL_TASK_QUEUE           = "ai-neta-complaints"
+}
+
+# Replace every placeholder ARN through the deployment secret/config manager.
+runtime_secret_arns = {
+  api = {
+    DATABASE_URL                  = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DATABASE_URL"
+    DIGILOCKER_CLIENT_ID          = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_CLIENT_ID"
+    DIGILOCKER_CLIENT_SECRET      = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_CLIENT_SECRET"
+    DIGILOCKER_AUTHORIZATION_ENDPOINT = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_AUTHORIZATION_ENDPOINT"
+    DIGILOCKER_TOKEN_ENDPOINT     = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_TOKEN_ENDPOINT"
+    DIGILOCKER_REDIRECT_URI        = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_REDIRECT_URI"
+    DIGILOCKER_SCOPE               = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DIGILOCKER_SCOPE"
+    IDENTITY_STATE_ENCRYPTION_KEY  = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/IDENTITY_STATE_ENCRYPTION_KEY"
+    ISSUE_CLUSTER_HMAC_KEY         = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/ISSUE_CLUSTER_HMAC_KEY"
+    OIDC_ISSUER                    = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/OIDC_ISSUER"
+    OIDC_JWKS_URL                  = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/OIDC_JWKS_URL"
+    OIDC_AUDIENCE                  = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/OIDC_AUDIENCE"
+    PUBLIC_TRACKING_TOKEN_SECRET   = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/PUBLIC_TRACKING_TOKEN_SECRET"
+    TEMPORAL_API_KEY               = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/TEMPORAL_API_KEY"
+  }
+  outbox = {
+    DATABASE_URL = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DATABASE_URL"
+  }
+  events = {
+    TEMPORAL_API_KEY = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/TEMPORAL_API_KEY"
+  }
+  temporal = {
+    DATABASE_URL    = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DATABASE_URL"
+    TEMPORAL_API_KEY = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/TEMPORAL_API_KEY"
+  }
+  evidence_cleanup = {
+    DATABASE_URL = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:ai-neta/staging/DATABASE_URL"
+  }
+}
