@@ -44,3 +44,34 @@ def test_agno_adapter_requires_structured_output_and_does_not_mutate_domain():
     assert complaint.calls[0]["output_schema"] is ComplaintExtraction
     assert intent.calls[0]["stream"] is False
     assert '"description": null' in intent.calls[1]["input"]
+
+
+def test_agno_adapter_keeps_obvious_civic_report_on_filing_path():
+    intent = RecordingAgent(
+        IntentClassification(intent="scheme", confidence=0.9, reason_code="model_guess")
+    )
+    orchestrator = AgnoAgentOrchestrator(intent, RecordingAgent(ComplaintExtraction(
+        issue_type="road", description=None, language="hi-IN", confidence=0.8
+    )))
+
+    classification = orchestrator.classify_intent("Mere area mein sadak par bada gaddha hai")
+
+    assert classification.intent == "filing"
+    assert classification.reason_code == "deterministic_civic_signal"
+
+
+def test_agno_adapter_fills_obvious_civic_issue_when_model_omits_it():
+    intent = RecordingAgent(
+        IntentClassification(intent="filing", confidence=0.9, reason_code="model_guess")
+    )
+    complaint = RecordingAgent(
+        ComplaintExtraction(issue_type=None, description=None, language="hi-IN", confidence=0.2)
+    )
+    orchestrator = AgnoAgentOrchestrator(intent, complaint)
+
+    extraction = orchestrator.extract_complaint(
+        "Mere area mein sadak par bada gaddha hai", language="hi-IN"
+    )
+
+    assert extraction.issue_type == "road"
+    assert extraction.description == "Mere area mein sadak par bada gaddha hai"

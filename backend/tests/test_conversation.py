@@ -78,6 +78,7 @@ def test_conversation_router_persists_structured_context_and_keeps_scheme_answer
     assert filing.json()["intent"] == "filing"
     assert filing.json()["next_action"] == "verify_identity"
     assert filing.json()["complaint_draft"] is None
+    assert "DigiLocker" not in filing.json()["response_text"]
     assert scheme.status_code == 200
     assert scheme.json()["next_action"] == "scheme_unavailable"
     assert "verified information" in scheme.json()["response_text"]
@@ -132,6 +133,7 @@ def test_verified_filing_returns_structured_draft_and_session_is_citizen_scoped(
     assert response.status_code == 200
     assert response.json()["next_action"] == "start_filing"
     assert response.json()["complaint_draft"]["issue_type"] == "road"
+    assert response.json()["response_text"] == "Maine aapki baat samajh li. Ab complaint ko ek-ek karke complete karte hain."
     assert response.json()["complaint_draft"]["description"] is None
 
     with Session(engine) as session:

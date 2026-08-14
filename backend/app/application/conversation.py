@@ -167,7 +167,7 @@ class ConversationService:
             next_action = "safety_refusal"
         elif classification.intent == "filing":
             if not principal.identity_verified:
-                response_text = "Shikayat darj karne se pehle DigiLocker se pehchaan verify karein."
+                response_text = "Shikayat shuru karne se pehle pehchaan verify kar lete hain. Neeche button dabayein."
                 next_action = "verify_identity"
             else:
                 try:
@@ -181,10 +181,10 @@ class ConversationService:
                         "Complaint drafting is temporarily unavailable"
                     ) from exc
                 if draft.issue_type and not draft.missing_fields:
-                    response_text = "Maine aapki baat samjhi hai. Photo, location aur voice note ke saath ise pakka karein."
+                    response_text = "Maine aapki baat samajh li. Ab complaint ko ek-ek karke complete karte hain."
                     next_action = "start_filing"
                 else:
-                    response_text = "Issue ko thoda aur saaf batayein—jaise sadak, paani, kachra ya streetlight."
+                    response_text = "Mujhe problem ka type saaf nahi mila. Thoda bataiye—jaise sadak, paani, kachra ya streetlight."
                     next_action = "start_filing"
         elif classification.intent == "status":
             response_text = "Receipt token bhejkar shikayat ka status dekhein. Main bina verified receipt ke status nahi bataunga."
@@ -212,10 +212,10 @@ class ConversationService:
                 )
         elif classification.intent == "continuation":
             if context.last_next_action == "verify_identity":
-                response_text = "Shikayat darj karne se pehle DigiLocker se pehchaan verify karein."
+                response_text = "Shikayat shuru karne se pehle pehchaan verify kar lete hain. Neeche button dabayein."
                 next_action = "verify_identity"
             elif context.last_next_action == "start_filing":
-                response_text = "Photo, location aur voice note ke saath shikayat pakki karein."
+                response_text = "Chaliye complaint ko ek-ek karke complete karte hain. Neeche agla step diya hai."
                 next_action = "start_filing"
             elif context.last_next_action == "provide_receipt":
                 response_text = "Receipt token bhejkar shikayat ka status dekhein."

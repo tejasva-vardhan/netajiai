@@ -58,8 +58,13 @@ development-only accounts are:
 | Account | Password | Capability |
 | --- | --- | --- |
 | `local-citizen` | `local-citizen` | citizen filing/tracking |
+| `test@test.com` | `test123` | requested local citizen test account |
 | `local-operator` | `local-operator` | operator workflows |
 | `local-admin` | `local-admin` | admin/operator/moderator |
+
+The local realm also allows self-registration from the filing entry flow. New
+accounts still need the identity-verification step before they can file a
+complaint.
 
 The realm adds the `aineta-api` audience, `roles` claim, and
 `identity_verified=true` claim required by the backend. These credentials and

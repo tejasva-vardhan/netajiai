@@ -5,7 +5,7 @@ export default function HomePage() {
     <main className="shell">
       <header className="topbar">
         <Link className="brand" href="/" aria-label="AI Neta home">AI NETA</Link>
-        <div className="topbar-links"><Link className="quiet-link" href="/transparency">Hisaab dekhein</Link><Link className="quiet-link" href="/track">Shikayat dekhein</Link></div>
+        <div className="topbar-links"><Link className="quiet-link" href="/transparency">Hisaab dekhein</Link><Link className="quiet-link" href="/track">Shikayat dekhein</Link><Link className="quiet-link" href="/admin">Operator/admin panel</Link></div>
       </header>
 
       <section className="hero" aria-labelledby="hero-title">
@@ -16,7 +16,7 @@ export default function HomePage() {
           uski progress dikhane ke liye bana hai.
         </p>
         <div className="actions">
-          <Link className="button button-primary" href="/file">Shikayat darj karein</Link>
+          <Link className="button button-primary" href="/file">Login / account se shuru karein</Link>
           <Link className="button button-primary" href="/track">Receipt se status dekhein</Link>
           <a className="button button-secondary" href="aineta://">Mobile app kholein</a>
         </div>

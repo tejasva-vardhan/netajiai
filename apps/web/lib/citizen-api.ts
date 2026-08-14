@@ -117,6 +117,32 @@ export type VoiceDraft = {
   transcription_model: string;
 };
 
+export type ConversationNextAction =
+  | "start_filing"
+  | "verify_identity"
+  | "provide_receipt"
+  | "scheme_answer"
+  | "scheme_unavailable"
+  | "continue_chat"
+  | "safety_refusal";
+
+export type ConversationTurnResponse = {
+  session_id: string;
+  response_id: string;
+  intent: "casual" | "scheme" | "filing" | "status" | "continuation";
+  confidence: number;
+  response_text: string;
+  next_action: ConversationNextAction;
+  complaint_draft: {
+    issue_type: string | null;
+    description: string | null;
+    language: string;
+    missing_fields: string[];
+    confidence: number;
+  } | null;
+  scheme_sources: Array<{ source_id: string; title: string; url: string }>;
+};
+
 export class CitizenApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -158,6 +184,26 @@ export function startIdentityVerification(accessToken: string): Promise<{ author
 
 export function getComplaintCategories(accessToken: string): Promise<ComplaintCategoryCatalog> {
   return request("/api/v1/complaints/categories", accessToken);
+}
+
+export function sendConversationTurn(
+  accessToken: string,
+  input: {
+    text: string;
+    language: string;
+    sessionId: string | null;
+    idempotencyKey: string;
+  },
+): Promise<ConversationTurnResponse> {
+  return request<ConversationTurnResponse>("/api/v1/conversations/turn", accessToken, {
+    method: "POST",
+    headers: { "Idempotency-Key": input.idempotencyKey },
+    body: JSON.stringify({
+      text: input.text,
+      language: input.language,
+      session_id: input.sessionId,
+    }),
+  });
 }
 
 export function createCaptureSession(

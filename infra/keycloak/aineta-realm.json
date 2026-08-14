@@ -2,7 +2,7 @@
   "realm": "aineta",
   "enabled": true,
   "displayName": "AI Neta Local",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "roles": {
@@ -153,6 +153,17 @@
       "attributes": { "identity_verified": ["true"] },
       "credentials": [{ "type": "password", "value": "local-operator", "temporary": false }],
       "realmRoles": ["operator"]
+    },
+    {
+      "username": "test@test.com",
+      "enabled": true,
+      "email": "test@test.com",
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "Citizen",
+      "attributes": { "identity_verified": ["true"] },
+      "credentials": [{ "type": "password", "value": "test123", "temporary": false }],
+      "realmRoles": ["citizen"]
     },
     {
       "username": "local-admin",

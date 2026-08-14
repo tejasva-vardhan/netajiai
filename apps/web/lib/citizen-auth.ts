@@ -47,6 +47,15 @@ export async function beginCitizenSignIn(returnUrl: CitizenReturnUrl = "/file"):
   await userManager.signinRedirect({ state: { returnUrl } });
 }
 
+export async function beginCitizenRegistration(): Promise<void> {
+  const userManager = getCitizenUserManager();
+  if (!userManager) throw new Error("Citizen sign-in is not configured");
+  await userManager.signinRedirect({
+    extraQueryParams: { prompt: "create" },
+    state: { returnUrl: "/file" },
+  });
+}
+
 export function getCitizenReturnUrl(user: User): CitizenReturnUrl {
   if (typeof user.state === "object" && user.state !== null && "returnUrl" in user.state) {
     return (user.state as { returnUrl?: unknown }).returnUrl === "/track" ? "/track" : "/file";

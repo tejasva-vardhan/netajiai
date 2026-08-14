@@ -66,6 +66,25 @@ def build_agno_orchestrator(settings: Settings) -> AgnoAgentOrchestrator:
             Use the current message and only the approved structured session
             context supplied with it. Do not answer the citizen, invent facts,
             or call tools. Return the requested structured schema.
+
+            Intent definitions and precedence:
+            - filing: the citizen reports a local civic problem or wants to
+              submit a complaint, including potholes, broken roads, water,
+              drainage, garbage, streetlights, overflowing waste, or similar
+              public-service failures. This includes Hindi, English, and
+              Hinglish descriptions without the word complaint.
+            - status: the citizen asks for the progress or receipt status of an
+              existing complaint.
+            - scheme: the citizen asks about a government scheme, benefit,
+              eligibility, or application. Do not classify a civic problem as
+              scheme merely because the sentence is in Hindi.
+            - continuation: a short confirmation such as yes, haan, or okay
+              that continues the last structured session action.
+            - casual: greetings or unrelated conversation.
+
+            Examples: "Mere area mein sadak par bada gaddha hai" and
+            "Gali mein paani bhar gaya" are filing. "Kya main is yojana ke liye
+            eligible hoon" is scheme. "Meri complaint ka status" is status.
             """
         ),
     )
