@@ -157,13 +157,14 @@ export function decideEvidenceReview(
   evidenceAssetId: string,
   decision: "approve" | "reject",
   reasonCode: string,
+  idempotencyKey: string,
 ): Promise<EvidenceReviewDecision> {
   return requestAdmin<EvidenceReviewDecision>(
     `/api/v1/admin/evidence/${encodeURIComponent(evidenceAssetId)}/review`,
     accessToken,
     {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ decision, reason_code: reasonCode }),
     },
   );

@@ -52,6 +52,15 @@ This is the canonical Next.js App Router surface for the redesign. Deploy
   the files. After submission, the citizen must explicitly confirm the
   private-by-default disclosure choice before opening tracking; public-name
   sharing is not offered while the approved policy flag is disabled.
+- `/file` is the citizen's single conversational surface: the durable router
+  handles casual conversation, complaint filing, receipt-status lookup, and
+  grounded scheme questions in one session. The UI switches automatically to
+  the relevant inline handoff and only shows the next filing requirement while
+  the session is on the filing path, preventing unrelated intents from
+  stacking workflow cards. A short general/status detour preserves an
+  unfinished filing draft; verification automatically resumes the complaint
+  text that led to the verification step; the explicit “Nayi complaint” action
+  starts clean.
 
 ## Local setup
 
@@ -96,14 +105,17 @@ Global launch gates are maintained in
   scope, configure backend CORS and the provider's `roles` claim for
   `operator`, `admin`, or `moderator`, then validate the capability matrix and
   session/logout policy in staging. No client secret belongs in the browser.
-- **Citizen filing activation:** register a separate public OIDC redirect at
-  `/auth/callback`, set `NEXT_PUBLIC_OIDC_CITIZEN_REDIRECT_URI` and approved
-  scopes, enable backend `WEB_CAPTURE_ENABLED=true`, generate a shared
+- **Citizen filing activation:** register public OIDC redirects at
+  `/auth/callback` and `/auth/silent-callback`, set
+  `NEXT_PUBLIC_OIDC_CITIZEN_REDIRECT_URI`,
+  `NEXT_PUBLIC_OIDC_CITIZEN_SILENT_REDIRECT_URI`, and approved scopes, enable backend `WEB_CAPTURE_ENABLED=true`, generate a shared
   `WEB_CAPTURE_SESSION_HMAC_KEY` of at least 32 bytes, and verify browser
   camera/GPS/microphone permissions over HTTPS. Keep
   `WEB_CAPTURE_REVIEW_REQUIRED=true` until approved media inspection and
   browser-capture policy allows direct verification; native mobile remains the
-  trusted-capture route.
+  trusted-capture route. Identity verification opens a short-lived popup and
+  polls the citizen-owned status so the callback response never replaces the
+  conversation page.
 - **Citizen tracking activation:** use the same public OIDC client for
   `/auth/callback`, verify that the API accepts the provider's citizen subject
   and scopes, and test cross-citizen receipt lookup in staging. Without this

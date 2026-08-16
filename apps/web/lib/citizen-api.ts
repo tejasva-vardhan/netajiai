@@ -1,5 +1,7 @@
 "use client";
 
+import { getCitizenUserManager } from "./citizen-auth";
+
 export type ComplaintCategory = {
   code: string;
   icon: string;
@@ -144,7 +146,7 @@ export type ConversationTurnResponse = {
 };
 
 export class CitizenApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly retryAfterSeconds: number | null = null) {
     super(message);
     this.name = "CitizenApiError";
   }
@@ -152,7 +154,28 @@ export class CitizenApiError extends Error {
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001").replace(/\/$/, "");
 
-async function request<T>(path: string, accessToken: string, init: RequestInit = {}): Promise<T> {
+let activeSilentRenew: Promise<string | null> | null = null;
+
+function renewCitizenAccessToken(): Promise<string | null> {
+  if (activeSilentRenew) return activeSilentRenew;
+  const manager = getCitizenUserManager();
+  if (!manager) return Promise.resolve(null);
+  activeSilentRenew = manager
+    .signinSilent()
+    .then((user) => user?.access_token ?? null)
+    .catch(() => null)
+    .finally(() => {
+      activeSilentRenew = null;
+    });
+  return activeSilentRenew;
+}
+
+async function request<T>(
+  path: string,
+  accessToken: string,
+  init: RequestInit = {},
+  allowSilentRenew = true,
+): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   headers.set("Authorization", `Bearer ${accessToken}`);
@@ -164,10 +187,23 @@ async function request<T>(path: string, accessToken: string, init: RequestInit =
     throw new CitizenApiError(0, "Citizen service is unavailable.");
   }
   if (!response.ok) {
+    if (response.status === 401 && allowSilentRenew) {
+      const renewedToken = await renewCitizenAccessToken();
+      if (renewedToken) return request(path, renewedToken, init, false);
+    }
     if (response.status === 401) throw new CitizenApiError(401, "Your citizen session has expired.");
     if (response.status === 403) throw new CitizenApiError(403, "Identity verification is required.");
     if (response.status === 404) throw new CitizenApiError(404, "This citizen service is not enabled.");
-    if (response.status === 429) throw new CitizenApiError(429, "Too many requests. Please wait and try again.");
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get("Retry-After");
+      const retryAfterSeconds = retryAfterHeader && /^\d+$/.test(retryAfterHeader)
+        ? Number.parseInt(retryAfterHeader, 10)
+        : null;
+      const waitMessage = retryAfterSeconds && retryAfterSeconds < 3600
+        ? ` Please wait ${Math.max(Math.ceil(retryAfterSeconds / 60), 1)} minute(s) and try again.`
+        : " Please wait and try again.";
+      throw new CitizenApiError(429, `Too many requests.${waitMessage}`, retryAfterSeconds);
+    }
     if (response.status >= 500) throw new CitizenApiError(response.status, "The citizen service is temporarily unavailable.");
     throw new CitizenApiError(response.status, "The request could not be completed.");
   }

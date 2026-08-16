@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AdminApiError,
   AdminComplaint,
@@ -34,6 +34,7 @@ export default function AdminPage() {
   const [reviewItems, setReviewItems] = useState<EvidenceReviewItem[]>([]);
   const [schemeReviewItems, setSchemeReviewItems] = useState<SchemeReviewItem[]>([]);
   const [schemeReviewAvailable, setSchemeReviewAvailable] = useState<boolean | null>(null);
+  const reviewIdempotencyKeysRef = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (token: string) => {
     setLoadState("loading");
@@ -89,11 +90,22 @@ export default function AdminPage() {
 
   async function review(item: EvidenceReviewItem, decision: "approve" | "reject"): Promise<void> {
     if (!accessToken) return;
+    const keyName = `${item.evidence_asset_id}:${decision}`;
+    const idempotencyKey = reviewIdempotencyKeysRef.current.get(keyName) ?? crypto.randomUUID();
+    reviewIdempotencyKeysRef.current.set(keyName, idempotencyKey);
     try {
-      await decideEvidenceReview(accessToken, item.evidence_asset_id, decision, decision === "approve" ? "operator_approved" : "operator_rejected");
+      await decideEvidenceReview(accessToken, item.evidence_asset_id, decision, decision === "approve" ? "operator_approved" : "operator_rejected", idempotencyKey);
       setReviewItems((current) => current.filter((candidate) => candidate.evidence_asset_id !== item.evidence_asset_id));
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "The evidence decision could not be saved.");
+    }
+  }
+
+  async function handleSignOut(): Promise<void> {
+    try {
+      await signOutAdmin();
+    } catch {
+      setError("Operator sign-out could not be completed. Please try again.");
     }
   }
 
@@ -104,7 +116,7 @@ export default function AdminPage() {
     <main className="shell admin-shell">
       <header className="topbar">
         <div><p className="eyebrow">AI Neta operator</p><h1 className="admin-title">Control tower</h1></div>
-        <button className="button button-secondary" type="button" onClick={() => void signOutAdmin()}>Sign out</button>
+        <button className="button button-secondary" type="button" onClick={() => void handleSignOut()}>Sign out</button>
       </header>
       {error && <p className="error" role="alert">{error}</p>}
       {loadState === "loading" && <p className="lede">Operator data load ho raha hai…</p>}

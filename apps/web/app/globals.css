@@ -38,6 +38,7 @@ a { color: inherit; }
 .chat-camera { border: 1px solid var(--line); border-radius: 18px; background: #17221d; padding: 12px; }
 .chat-camera .camera-preview { display: block; max-height: 360px; }
 .chat-camera .actions { margin-top: 12px; }
+.camera-status { margin: 10px 0 0; color: white; font-size: 13px; }
 .chat-action-card { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 18px; background: var(--pale); padding: 20px; }
 .chat-action-card .eyebrow { margin: 0; }
 .chat-action-card h2 { margin: 0; font-size: 22px; }
@@ -47,6 +48,22 @@ a { color: inherit; }
 .guided-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .guided-actions .button { flex: 1 1 220px; }
 .receipt-card h2 { color: var(--green); }
+.conversation-handoff { display: grid; gap: 12px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--ink); }
+.conversation-handoff-form { display: grid; gap: 8px; }
+.conversation-handoff-form label { color: var(--muted); font-size: 13px; font-weight: 800; }
+.conversation-handoff-controls { display: flex; gap: 8px; }
+.conversation-handoff-controls input { min-width: 0; margin: 0; background: white; }
+.conversation-handoff-controls .button { min-height: 44px; padding: 10px 14px; white-space: nowrap; }
+.conversation-handoff .error { margin: 0; }
+.conversation-handoff-result { display: grid; gap: 3px; border-radius: 12px; background: var(--pale); padding: 12px; color: var(--muted); font-size: 13px; }
+.conversation-handoff-result strong { color: var(--green); text-transform: capitalize; }
+.conversation-sources { display: grid; gap: 6px; }
+.conversation-sources .eyebrow { margin: 0; font-size: 11px; }
+.conversation-sources ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
+.conversation-sources a { color: var(--green); font-size: 13px; font-weight: 800; }
+.error-block { display: grid; gap: 8px; }
+.error-block .error { margin: 0; }
+.error-block .button { justify-self: start; min-height: 42px; padding: 10px 14px; }
 .chat-composer { border-top: 1px solid var(--line); background: #fbfdfb; padding: 18px 22px 14px; }
 .chat-composer textarea { min-height: 58px; margin: 0; border-radius: 16px; background: white; }
 .chat-composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 12px; }
@@ -198,6 +215,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   .chat-composer { padding: 14px 12px 12px; }
   .chat-composer-footer { align-items: stretch; flex-direction: column; }
   .chat-send { width: 100%; }
+  .conversation-handoff-controls { align-items: stretch; flex-direction: column; }
   .hero { padding: 82px 0 58px; }
   .feature-grid { grid-template-columns: 1fr; }
   .actions { align-items: stretch; flex-direction: column; }

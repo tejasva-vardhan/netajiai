@@ -8,20 +8,36 @@ import {
   getComplaint,
   sendCitizenConfirmation,
 } from "../lib/citizen-api";
+import { getPublicComplaint, PublicApiError, PublicComplaint } from "../lib/public-api";
 import { beginCitizenSignIn, getCitizenUser, isCitizenOidcConfigured as hasCitizenOidc } from "../lib/citizen-auth";
 
-type PublicComplaint = {
-  complaint_id: string;
-  status: string;
-  version: number;
-  issue_type: string | null;
-  execution_zone_state: string;
-  created_at: string;
-  updated_at: string;
-};
-
-const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001").replace(/\/$/, "");
 const TRACK_TOKEN_KEY = "aineta.track.token";
+
+function readTrackingToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(TRACK_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function removeTrackingToken(): boolean {
+  try {
+    window.sessionStorage.removeItem(TRACK_TOKEN_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveTrackingToken(value: string): boolean {
+  try {
+    window.sessionStorage.setItem(TRACK_TOKEN_KEY, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export default function TrackingForm() {
   const [token, setToken] = useState("");
@@ -35,9 +51,11 @@ export default function TrackingForm() {
   const [confirmationMessage, setConfirmationMessage] = useState("");
 
   useEffect(() => {
-    const savedToken = window.sessionStorage.getItem(TRACK_TOKEN_KEY);
+    const queryToken = new URLSearchParams(window.location.search).get("token")?.trim() || null;
+    const savedToken = queryToken ?? readTrackingToken();
     if (!savedToken) return;
-    window.sessionStorage.removeItem(TRACK_TOKEN_KEY);
+    removeTrackingToken();
+    if (queryToken) window.history.replaceState(null, "", window.location.pathname);
     setToken(savedToken);
     void lookup(savedToken);
   }, []);
@@ -58,7 +76,7 @@ export default function TrackingForm() {
     setPrivateResult(null);
     setCitizenAccessToken(null);
     try {
-      const publicResult = await getPublicTracking(trimmedToken);
+      const publicResult = await getPublicComplaint(trimmedToken);
       setResult(publicResult);
       if (speakResult) speakStatus(publicResult.status);
 
@@ -73,7 +91,7 @@ export default function TrackingForm() {
         // A valid receipt may belong to another citizen; keep the redacted view.
       }
     } catch (reason: unknown) {
-      setError(reason instanceof CitizenApiError ? reason.message : "Yeh receipt nahi mili. Token dobara jaanch kar try karein.");
+      setError(reason instanceof PublicApiError || reason instanceof CitizenApiError ? reason.message : "Yeh receipt nahi mili. Token dobara jaanch kar try karein.");
     } finally {
       setLoading(false);
     }
@@ -91,11 +109,14 @@ export default function TrackingForm() {
       return;
     }
     setError("");
-    window.sessionStorage.setItem(TRACK_TOKEN_KEY, trimmedToken);
+    if (!saveTrackingToken(trimmedToken)) {
+      setError("Is browser mein sign-in ke liye temporary session save nahi ho saka. Private browsing/storage permission check karke dobara koshish karein.");
+      return;
+    }
     try {
       await beginCitizenSignIn("/track");
     } catch {
-      window.sessionStorage.removeItem(TRACK_TOKEN_KEY);
+      removeTrackingToken();
       setError("Citizen sign-in abhi shuru nahi ho saka. Dobara koshish karein.");
     }
   }
@@ -255,21 +276,6 @@ function PrivateTrackingPanel({
       )}
     </div>
   );
-}
-
-async function getPublicTracking(token: string): Promise<PublicComplaint> {
-  let response: Response;
-  try {
-    response = await fetch(
-      `${apiBaseUrl}/api/v1/public/complaints/${encodeURIComponent(token)}`,
-      { headers: { Accept: "application/json" }, cache: "no-store" },
-    );
-  } catch {
-    throw new CitizenApiError(0, "Tracking service is unavailable. Please try again.");
-  }
-  if (response.status === 404) throw new CitizenApiError(404, "Yeh receipt nahi mili. Token dobara jaanch kar try karein.");
-  if (!response.ok) throw new CitizenApiError(response.status, "Tracking service is temporarily unavailable.");
-  return (await response.json()) as PublicComplaint;
 }
 
 function statusPresentation(status: string): StatusPresentation {

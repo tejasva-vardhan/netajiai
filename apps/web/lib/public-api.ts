@@ -11,6 +11,16 @@ export type PublicTransparency = {
   mapping_in_progress_count: number;
 };
 
+export type PublicComplaint = {
+  complaint_id: string;
+  status: string;
+  version: number;
+  issue_type: string | null;
+  execution_zone_state: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export class PublicApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -37,4 +47,19 @@ export async function getPublicTransparency(): Promise<PublicTransparency> {
     throw new PublicApiError(response.status, "Public transparency could not be loaded.");
   }
   return (await response.json()) as PublicTransparency;
+}
+
+export async function getPublicComplaint(trackingToken: string): Promise<PublicComplaint> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/v1/public/complaints/${encodeURIComponent(trackingToken)}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+  } catch {
+    throw new PublicApiError(0, "Tracking service is unavailable. Please try again.");
+  }
+  if (response.status === 404) throw new PublicApiError(404, "Yeh receipt nahi mili. Token dobara jaanch kar try karein.");
+  if (!response.ok) throw new PublicApiError(response.status, "Tracking service is temporarily unavailable.");
+  return (await response.json()) as PublicComplaint;
 }

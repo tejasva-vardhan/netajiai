@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  InMemoryWebStorage,
   User,
   UserManager,
   WebStorageStateStore,
@@ -26,14 +25,21 @@ export function getCitizenUserManager(): UserManager | null {
     redirect_uri:
       process.env.NEXT_PUBLIC_OIDC_CITIZEN_REDIRECT_URI?.trim() ||
       `${window.location.origin}/auth/callback`,
+    silent_redirect_uri:
+      process.env.NEXT_PUBLIC_OIDC_CITIZEN_SILENT_REDIRECT_URI?.trim() ||
+      `${window.location.origin}/auth/silent-callback`,
     post_logout_redirect_uri:
       process.env.NEXT_PUBLIC_OIDC_CITIZEN_POST_LOGOUT_REDIRECT_URI?.trim() ||
       `${window.location.origin}/`,
     response_type: "code",
     scope: process.env.NEXT_PUBLIC_OIDC_SCOPES?.trim() || "openid profile",
-    automaticSilentRenew: false,
+    // Refresh the short-lived access token with the OIDC refresh token while
+    // the citizen keeps the tab open. A 401 still requires an explicit sign-in.
+    automaticSilentRenew: true,
     loadUserInfo: false,
-    userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    // Keep the citizen session across a same-tab reload without putting the
+    // bearer token in long-lived localStorage.
+    userStore: new WebStorageStateStore({ store: window.sessionStorage }),
     stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
   });
   return manager;
