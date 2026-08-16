@@ -63,7 +63,10 @@ def test_ai_route_returns_429_without_exposing_identity_or_ip_details():
         "text": "Gali mein bada pothole hai",
         "language": "hi-IN",
     }
-    headers = {"Authorization": "Bearer test-token"}
+    headers = {
+        "Authorization": "Bearer test-token",
+        "Origin": "http://localhost:3000",
+    }
 
     assert client.post("/api/v1/complaints/draft", headers=headers, json=request).status_code == 200
     assert client.post("/api/v1/complaints/draft", headers=headers, json=request).status_code == 200
@@ -72,6 +75,7 @@ def test_ai_route_returns_429_without_exposing_identity_or_ip_details():
     assert limited.status_code == 429
     assert limited.headers["X-RateLimit-Remaining"] == "0"
     assert limited.headers["Retry-After"]
+    assert "retry-after" in limited.headers["Access-Control-Expose-Headers"].lower()
     assert limited.json() == {"detail": "Too many requests"}
     assert "digilocker:rate-citizen" not in limited.text
     assert "testclient" not in limited.text

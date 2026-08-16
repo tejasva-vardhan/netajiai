@@ -278,6 +278,13 @@ async def require_identity_rate_limit(
     await _enforce_rate_limit(request, policy_name="identity", principal=principal)
 
 
+async def require_identity_status_rate_limit(
+    request: Request,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+) -> None:
+    await _enforce_rate_limit(request, policy_name="identity_status", principal=principal)
+
+
 async def require_operator_rate_limit(
     request: Request,
     principal: AuthenticatedPrincipal = Depends(get_current_principal),

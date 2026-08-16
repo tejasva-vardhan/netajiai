@@ -671,6 +671,13 @@ def test_uncertain_media_enters_operator_review_queue_and_is_idempotently_approv
     assert replay.status_code == 200
     assert replay.json() == decision.json()
 
+    conflicting_replay = client.post(
+        f"/api/v1/admin/evidence/{asset.evidence_asset_id}/review",
+        headers=decision_headers,
+        json={"decision": "reject", "reason_code": "operator_rejected"},
+    )
+    assert conflicting_replay.status_code == 409
+
     empty_queue = client.get(
         "/api/v1/admin/evidence/review-queue",
         headers={"Authorization": "Bearer operator"},

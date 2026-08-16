@@ -244,7 +244,19 @@ class SqlAlchemyEvidenceMetadataRepository(EvidenceMetadataRepository, EvidenceR
             raise EvidenceReviewConflict("Evidence asset was not found")
         if record.status != "review_required":
             if record.review_idempotency_key == idempotency_key and record.reviewed_at is not None:
-                return self._review_result(record)
+                replay = self._session.scalar(
+                    select(EvidenceReviewEventRecord).where(
+                        EvidenceReviewEventRecord.evidence_asset_id == evidence_asset_id,
+                        EvidenceReviewEventRecord.idempotency_key == idempotency_key,
+                    )
+                )
+                if (
+                    replay is not None
+                    and replay.reviewer_id == reviewer_id
+                    and replay.decision == decision
+                    and replay.reason_code == reason_code
+                ):
+                    return self._review_result(record)
             raise EvidenceReviewConflict("Evidence asset is no longer awaiting review")
         status = "verified" if decision == "approve" else "rejected"
         reason_codes = (

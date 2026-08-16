@@ -55,6 +55,12 @@ DEFAULT_RATE_LIMIT_POLICIES: dict[str, RateLimitPolicy] = {
     "evidence": RateLimitPolicy(identity_limit=40, ip_limit=160, device_limit=80, window_seconds=3600),
     "complaint": RateLimitPolicy(identity_limit=10, ip_limit=40, device_limit=20, window_seconds=3600),
     "identity": RateLimitPolicy(identity_limit=10, ip_limit=30, device_limit=20, window_seconds=3600),
+    # Status is a cheap authenticated read. Keep verification-start abuse
+    # controls strict while allowing normal page refreshes and return-from-
+    # provider polling without exhausting the write-flow bucket.
+    "identity_status": RateLimitPolicy(
+        identity_limit=120, ip_limit=300, device_limit=240, window_seconds=3600
+    ),
     "public": RateLimitPolicy(identity_limit=0, ip_limit=120, device_limit=None, window_seconds=3600),
     "operator": RateLimitPolicy(identity_limit=300, ip_limit=600, device_limit=None, window_seconds=3600),
 }

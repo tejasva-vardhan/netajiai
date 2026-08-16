@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import text
@@ -43,6 +43,7 @@ from backend.app.api.dependencies import (
     get_evidence_upload_service,
     get_evidence_review_service,
     get_identity_verification_status_service,
+    require_identity_status_rate_limit,
     get_public_complaint_tracking_service,
     get_public_transparency_service,
     get_submission_service,
@@ -333,7 +334,12 @@ def create_app(
             "X-Request-ID",
             "X-Device-ID",
         ],
-        expose_headers=["X-Request-ID"],
+        expose_headers=[
+            "Retry-After",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-Request-ID",
+        ],
     )
 
     @app.middleware("http")
@@ -409,6 +415,12 @@ def create_app(
         return HealthResponse(
             status="ok", service=config.service_name, environment=config.environment, version="0.1.0"
         )
+
+    @app.get("/favicon.ico", include_in_schema=False, status_code=status.HTTP_204_NO_CONTENT)
+    def favicon() -> Response:
+        """Keep browser-opened provider callbacks free of a spurious 404."""
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/ready", response_model=ReadinessResponse, tags=["operations"])
     def ready(request: Request) -> ReadinessResponse:
@@ -991,7 +1003,7 @@ def create_app(
         tags=["identity"],
     )
     def get_digilocker_status(
-        _rate_limit: None = Depends(require_identity_rate_limit),
+        _rate_limit: None = Depends(require_identity_status_rate_limit),
         principal: AuthenticatedPrincipal = Depends(get_current_principal),
         service: IdentityVerificationStatusService = Depends(
             get_identity_verification_status_service
