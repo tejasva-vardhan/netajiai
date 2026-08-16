@@ -18,6 +18,7 @@ def test_agno_factory_builds_tool_free_agents_without_calling_provider():
     assert isinstance(orchestrator, AgnoAgentOrchestrator)
     assert orchestrator.intent_agent.name == "aineta-intent-router"
     assert orchestrator.complaint_agent.name == "aineta-complaint-extractor"
+    assert orchestrator.casual_agent.name == "aineta-casual-chat"
 
 
 def test_agno_factory_rejects_unapproved_provider_before_importing_model():

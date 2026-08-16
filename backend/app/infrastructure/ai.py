@@ -19,6 +19,31 @@ class AgnoConfigurationError(RuntimeError):
     """Raised when the selected Agno provider cannot be constructed safely."""
 
 
+def _mistral_client_options(timeout_seconds: int) -> dict[str, Any]:
+    """Adapt the pinned Mistral SDK client options across supported installs."""
+
+    try:
+        from mistralai.client.utils.retries import (  # type: ignore[import-not-found]
+            BackoffStrategy,
+            RetryConfig,
+        )
+    except ImportError:
+        # Older Agno/Mistral combinations expose these names directly on the
+        # model. The test environment can still construct the lazy graph with
+        # that compatibility path; the deployment lock uses the SDK 2.9 API.
+        return {"max_retries": 0, "timeout": timeout_seconds}
+    return {
+        "client_params": {
+            "timeout_ms": timeout_seconds * 1000,
+            "retry_config": RetryConfig(
+                strategy="none",
+                backoff=BackoffStrategy(1, 1, 1.0, 1),
+                retry_connection_errors=False,
+            ),
+        }
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class _AgnoAgentBoundary:
     """Adapt Agno's broad overloads to the narrow application port."""
@@ -51,11 +76,17 @@ def build_agno_orchestrator(settings: Settings) -> AgnoAgentOrchestrator:
             "Install agno and mistralai before enabling the Mistral adapter"
         ) from exc
 
+    model_options = _mistral_client_options(settings.ai_request_timeout_seconds)
     model = MistralChat(
         id=settings.ai_model,
         api_key=settings.mistral_api_key or None,
         temperature=0.0,
         max_tokens=512,
+        # Agno 2.6.5 exposes the older max_retries/timeout names, while the
+        # pinned Mistral SDK 2.9.2 accepts retry_config/timeout_ms. Keep the
+        # provider-version adaptation at this infrastructure boundary so a
+        # slow or failing request cannot hold a browser turn indefinitely.
+        **model_options,
     )
     intent_agent = Agent(
         name="aineta-intent-router",
@@ -74,7 +105,9 @@ def build_agno_orchestrator(settings: Settings) -> AgnoAgentOrchestrator:
               public-service failures. This includes Hindi, English, and
               Hinglish descriptions without the word complaint.
             - status: the citizen asks for the progress or receipt status of an
-              existing complaint.
+              existing complaint, including Hinglish/Hindi phrases such as
+              "kya haal hai", "kahan tak pahuncha", "kab tak hoga", or
+              "update batao".
             - scheme: the citizen asks about a government scheme, benefit,
               eligibility, or application. Do not classify a civic problem as
               scheme merely because the sentence is in Hindi.
@@ -84,7 +117,8 @@ def build_agno_orchestrator(settings: Settings) -> AgnoAgentOrchestrator:
 
             Examples: "Mere area mein sadak par bada gaddha hai" and
             "Gali mein paani bhar gaya" are filing. "Kya main is yojana ke liye
-            eligible hoon" is scheme. "Meri complaint ka status" is status.
+            eligible hoon" is scheme. "Meri complaint ka status" and
+            "Meri sadak wali shikayat ka kya haal hai" are status.
             """
         ),
     )
@@ -103,7 +137,24 @@ def build_agno_orchestrator(settings: Settings) -> AgnoAgentOrchestrator:
             """
         ),
     )
+    casual_agent = Agent(
+        name="aineta-casual-chat",
+        model=model,
+        instructions=dedent(
+            """
+            Reply naturally and briefly to general citizen conversation in the
+            requested language. Keep the AI Neta voice warm, respectful, and
+            practical. Do not invent government facts, complaint status,
+            eligibility, routing, deadlines, or identity claims. If the
+            citizen appears to need a complaint, status lookup, or scheme
+            information, point them to that action in one short sentence; the
+            router remains the authority for changing workflow. Return only
+            the requested structured schema.
+            """
+        ),
+    )
     return AgnoAgentOrchestrator(
         intent_agent=_AgnoAgentBoundary(intent_agent),
         complaint_agent=_AgnoAgentBoundary(complaint_agent),
+        casual_agent=_AgnoAgentBoundary(casual_agent),
     )

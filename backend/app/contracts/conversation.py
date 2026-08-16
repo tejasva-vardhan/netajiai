@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.contracts.ai import ComplaintExtraction, Intent
 from backend.app.contracts.schemes import SchemeSourceCitation
@@ -42,6 +42,14 @@ class ConversationTurnRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10_000)
     language: str | None = Field(default=None, min_length=2, max_length=40)
     session_id: UUID | None = None
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("text must not be blank")
+        return cleaned
 
 
 class ConversationTurnResponse(BaseModel):

@@ -24,6 +24,11 @@ class CountingFakeAgentOrchestrator(FakeAgentOrchestrator):
         return super().classify_intent(text, context=context)
 
 
+class FailingDraftOrchestrator(FakeAgentOrchestrator):
+    def extract_complaint(self, text, *, language=None, context=None):
+        raise RuntimeError("draft provider unavailable")
+
+
 def _app(principal: AuthenticatedPrincipal, engine, orchestrator=None):
     return create_app(
         Settings(environment="test"),
@@ -116,6 +121,151 @@ def test_conversation_router_persists_structured_context_and_keeps_scheme_answer
         assert record.state["turn_count"] == 2
         assert record.state["last_response"]["next_action"] == "verify_identity"
         assert "pothole" not in str(record.state)
+
+
+def test_conversation_uses_the_casual_handler_without_changing_workflow_action():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    client = TestClient(_app(AuthenticatedPrincipal("oidc:casual"), engine))
+
+    response = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "casual-turn-1"},
+        json={"text": "hello", "language": "en"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["intent"] == "casual"
+    assert response.json()["next_action"] == "continue_chat"
+    assert "Namaste" in response.json()["response_text"]
+
+
+def test_conversation_rejects_whitespace_only_turn_before_routing():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    client = TestClient(_app(AuthenticatedPrincipal("oidc:blank-turn"), engine))
+
+    response = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "blank-turn-1"},
+        json={"text": "   \n\t", "language": "hi-IN"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_conversation_auto_transitions_between_general_filing_and_status_in_one_session():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    client = TestClient(
+        _app(AuthenticatedPrincipal("oidc:multi-workflow", identity_verified=True), engine)
+    )
+
+    casual = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "multi-casual"},
+        json={"text": "Namaste", "language": "hi-IN"},
+    )
+    filing = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "multi-filing"},
+        json={
+            "text": "Meri complaint darj karni hai, gali mein pothole hai",
+            "language": "hi-IN",
+            "session_id": casual.json()["session_id"],
+        },
+    )
+    status = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "multi-status"},
+        json={
+            "text": "Meri complaint ka status dekhna hai",
+            "language": "hi-IN",
+            "session_id": filing.json()["session_id"],
+        },
+    )
+
+    assert casual.status_code == 200
+    assert casual.json()["next_action"] == "continue_chat"
+    assert filing.status_code == 200
+    assert filing.json()["intent"] == "filing"
+    assert filing.json()["next_action"] == "start_filing"
+    assert status.status_code == 200
+    assert status.json()["intent"] == "status"
+    assert status.json()["next_action"] == "provide_receipt"
+    assert status.json()["session_id"] == casual.json()["session_id"]
+
+
+def test_conversation_continuation_rechecks_verification_before_resuming_filing():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    state = {"verified": False}
+    client = TestClient(
+        create_app(
+            Settings(environment="test"),
+            session_factory=sessionmaker(engine),
+            principal_resolver=lambda _: AuthenticatedPrincipal(
+                "oidc:verification-transition", identity_verified=state["verified"]
+            ),
+            ai_orchestrator=FakeAgentOrchestrator(),
+        )
+    )
+
+    filing = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "verification-transition-1"},
+        json={"text": "Meri pothole complaint darj karni hai", "language": "hi-IN"},
+    )
+    state["verified"] = True
+    resumed = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "verification-transition-2"},
+        json={
+            "text": "haan",
+            "language": "hi-IN",
+            "session_id": filing.json()["session_id"],
+        },
+    )
+
+    assert filing.json()["next_action"] == "verify_identity"
+    assert resumed.status_code == 200
+    assert resumed.json()["next_action"] == "start_filing"
+
+
+def test_conversation_continuation_rechecks_revoked_verification_before_filing():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    state = {"verified": True}
+    client = TestClient(
+        create_app(
+            Settings(environment="test"),
+            session_factory=sessionmaker(engine),
+            principal_resolver=lambda _: AuthenticatedPrincipal(
+                "oidc:verification-revoked", identity_verified=state["verified"]
+            ),
+            ai_orchestrator=FakeAgentOrchestrator(),
+        )
+    )
+
+    filing = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "verification-revoked-1"},
+        json={"text": "Meri pothole complaint darj karni hai", "language": "hi-IN"},
+    )
+    state["verified"] = False
+    resumed = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "verification-revoked-2"},
+        json={
+            "text": "haan",
+            "language": "hi-IN",
+            "session_id": filing.json()["session_id"],
+        },
+    )
+
+    assert filing.json()["next_action"] == "start_filing"
+    assert resumed.status_code == 200
+    assert resumed.json()["next_action"] == "verify_identity"
 
 
 def test_verified_filing_returns_structured_draft_and_session_is_citizen_scoped():
@@ -212,3 +362,53 @@ def test_conversation_retry_replays_persisted_response_without_reclassifying():
     assert retry.status_code == 200
     assert retry.json() == first.json()
     assert orchestrator.classification_calls == 1
+
+
+def test_failed_turn_retry_cannot_replay_the_previous_turn_response():
+    engine = _engine()
+    Base.metadata.create_all(engine)
+    client = TestClient(
+        _app(
+            AuthenticatedPrincipal("oidc:failed-turn", identity_verified=True),
+            engine,
+            FailingDraftOrchestrator(),
+        )
+    )
+
+    first = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "failed-turn-first"},
+        json={"text": "hello", "language": "en"},
+    )
+    failed = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "failed-turn-second"},
+        json={
+            "text": "Meri pothole complaint darj karni hai",
+            "language": "hi-IN",
+            "session_id": first.json()["session_id"],
+        },
+    )
+    retry = client.post(
+        "/api/v1/conversations/turn",
+        headers={"Idempotency-Key": "failed-turn-second"},
+        json={
+            "text": "Meri pothole complaint darj karni hai",
+            "language": "hi-IN",
+            "session_id": first.json()["session_id"],
+        },
+    )
+
+    assert first.status_code == 200
+    assert failed.status_code == 503
+    assert retry.status_code == 503
+    assert retry.json()["detail"] == "Conversation service is temporarily unavailable"
+    assert retry.json()["detail"] != first.json()["response_text"]
+
+    with Session(engine) as session:
+        record = session.get(SessionRecord, UUID(first.json()["session_id"]))
+        assert record is not None
+        assert record.state["last_intent"] == "casual"
+        assert record.state["turn_count"] == 1
+        assert record.state["last_response_turn_key_hash"]
+        assert record.state["last_response"]["response_id"] == first.json()["response_id"]

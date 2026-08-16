@@ -27,7 +27,7 @@ class SqlAlchemyConversationSessionRepository:
             select(SessionRecord).where(
                 SessionRecord.id == session_id,
                 SessionRecord.citizen_id == citizen_id,
-            )
+            ).with_for_update()
         )
         return self._view(record) if record is not None else None
 
@@ -46,7 +46,7 @@ class SqlAlchemyConversationSessionRepository:
             select(SessionRecord).where(
                 SessionRecord.id == session_id,
                 SessionRecord.citizen_id == citizen_id,
-            )
+            ).with_for_update()
         )
         if record is None:
             record = SessionRecord(
@@ -74,8 +74,10 @@ class SqlAlchemyConversationSessionRepository:
             record.state = state
             record.language = language or record.language
             record.updated_at = now
-        self._session.commit()
-        self._session.refresh(record)
+        # Keep the row lock and transaction open until save_response() stores
+        # the completed response. If model/draft work fails, closing the API
+        # session rolls the state change back instead of leaving a half-turn.
+        self._session.flush()
         return self._view(record)
 
     def save_response(
@@ -84,18 +86,20 @@ class SqlAlchemyConversationSessionRepository:
         session_id: UUID,
         citizen_id: str,
         response: ConversationTurnResponse,
+        turn_key_hash: str,
         now: datetime,
     ) -> None:
         record = self._session.scalar(
             select(SessionRecord).where(
                 SessionRecord.id == session_id,
                 SessionRecord.citizen_id == citizen_id,
-            )
+            ).with_for_update()
         )
         if record is None:
             raise ValueError("Conversation session was not found")
         state = dict(record.state)
         state["last_response"] = _without_draft_text(response).model_dump(mode="json")
+        state["last_response_turn_key_hash"] = turn_key_hash
         record.state = state
         record.updated_at = now
         self._session.commit()
@@ -112,6 +116,7 @@ class SqlAlchemyConversationSessionRepository:
             turn_count=int(record.state.get("turn_count", 0)),
             last_turn_key_hash=record.state.get("last_turn_key_hash"),
             last_turn_fingerprint=record.state.get("last_turn_fingerprint"),
+            last_response_turn_key_hash=record.state.get("last_response_turn_key_hash"),
             last_response=last_response,
         )
 

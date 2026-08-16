@@ -79,6 +79,7 @@ class Settings:
     database_url: str = ""
     ai_provider: str = "mistral"
     ai_model: str = "mistral-small-latest"
+    ai_request_timeout_seconds: int = 12
     mistral_api_key: str = field(default="", repr=False)
     deepgram_api_key: str = field(default="", repr=False)
     deepgram_model: str = "nova-3"
@@ -187,6 +188,11 @@ class Settings:
             database_url=values.get("DATABASE_URL", "").strip(),
             ai_provider=values.get("AI_PROVIDER", "mistral").strip().lower(),
             ai_model=values.get("AI_MODEL", "mistral-small-latest").strip(),
+            ai_request_timeout_seconds=_positive_int(
+                values.get("AI_REQUEST_TIMEOUT_SECONDS"),
+                name="AI_REQUEST_TIMEOUT_SECONDS",
+                default=12,
+            ),
             mistral_api_key=values.get("MISTRAL_API_KEY", "").strip(),
             deepgram_api_key=values.get("DEEPGRAM_API_KEY", "").strip(),
             deepgram_model=values.get("DEEPGRAM_MODEL", "nova-3").strip(),

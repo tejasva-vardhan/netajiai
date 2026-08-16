@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from backend.app.contracts.ai import ComplaintExtraction, IntentClassification
+from backend.app.contracts.ai import CasualReply, ComplaintExtraction, IntentClassification
 from backend.app.contracts.complaints import (
     DisclosureConsentRequest,
     DisclosureConsentResponse,
@@ -36,6 +36,10 @@ class AgentOrchestrator(Protocol):
         language: str | None = None,
         context: ConversationContext | None = None,
     ) -> ComplaintExtraction: ...
+
+    def respond_casual(
+        self, text: str, *, language: str | None = None, context: ConversationContext | None = None
+    ) -> CasualReply: ...
 
 
 class RoutingResolver(Protocol):

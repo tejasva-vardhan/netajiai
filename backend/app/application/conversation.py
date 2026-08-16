@@ -35,6 +35,7 @@ class ConversationSession:
     turn_count: int
     last_turn_key_hash: str | None
     last_turn_fingerprint: str | None
+    last_response_turn_key_hash: str | None
     last_response: ConversationTurnResponse | None
 
 
@@ -59,6 +60,7 @@ class ConversationSessionRepository(Protocol):
         session_id: UUID,
         citizen_id: str,
         response: ConversationTurnResponse,
+        turn_key_hash: str,
         now: datetime,
     ) -> None: ...
 
@@ -129,6 +131,7 @@ class ConversationService:
             if (
                 existing_session is not None
                 and existing_session.last_turn_key_hash == turn_key_hash
+                and existing_session.last_response_turn_key_hash == turn_key_hash
                 and existing_session.last_response is not None
             ):
                 return existing_session.last_response
@@ -212,11 +215,19 @@ class ConversationService:
                 )
         elif classification.intent == "continuation":
             if context.last_next_action == "verify_identity":
-                response_text = "Shikayat shuru karne se pehle pehchaan verify kar lete hain. Neeche button dabayein."
-                next_action = "verify_identity"
+                if principal.identity_verified:
+                    response_text = "Pehchaan verify ho gayi. Ab complaint ko ek-ek karke complete karte hain."
+                    next_action = "start_filing"
+                else:
+                    response_text = "Shikayat shuru karne se pehle pehchaan verify kar lete hain. Neeche button dabayein."
+                    next_action = "verify_identity"
             elif context.last_next_action == "start_filing":
-                response_text = "Chaliye complaint ko ek-ek karke complete karte hain. Neeche agla step diya hai."
-                next_action = "start_filing"
+                if principal.identity_verified:
+                    response_text = "Chaliye complaint ko ek-ek karke complete karte hain. Neeche agla step diya hai."
+                    next_action = "start_filing"
+                else:
+                    response_text = "Complaint jaari rakhne se pehle pehchaan verify kar lete hain. Neeche button dabayein."
+                    next_action = "verify_identity"
             elif context.last_next_action == "provide_receipt":
                 response_text = "Receipt token bhejkar shikayat ka status dekhein."
                 next_action = "provide_receipt"
@@ -224,7 +235,14 @@ class ConversationService:
                 response_text = "Main civic problem samajhne, shikayat darj karne aur uska status dikhane mein madad kar sakta hoon."
                 next_action = "continue_chat"
         else:
-            response_text = "Main civic problem samajhne, shikayat darj karne aur uska status dikhane mein madad kar sakta hoon."
+            try:
+                response_text = self._orchestrator.respond_casual(
+                    text, language=language, context=context
+                ).text
+            except Exception as exc:
+                raise ConversationUnavailable(
+                    "Conversation service is temporarily unavailable"
+                ) from exc
             next_action = "continue_chat"
 
         response = ConversationTurnResponse(
@@ -252,6 +270,7 @@ class ConversationService:
                 session_id=current_session.session_id,
                 citizen_id=principal.subject_ref,
                 response=response,
+                turn_key_hash=turn_key_hash,
                 now=now,
             )
         except Exception as exc:

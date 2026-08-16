@@ -53,8 +53,22 @@ def test_development_defaults_are_safe_for_local_contract_work():
 
     assert settings.environment == "development"
     assert settings.ai_provider == "mistral"
+    assert settings.ai_request_timeout_seconds == 12
     assert settings.kafka_bootstrap_servers == "kafka:29092"
     settings.validate_for_production()
+
+
+def test_ai_request_timeout_is_positive_and_configurable():
+    settings = Settings.from_env({"AI_REQUEST_TIMEOUT_SECONDS": "7"})
+
+    assert settings.ai_request_timeout_seconds == 7
+
+    try:
+        Settings.from_env({"AI_REQUEST_TIMEOUT_SECONDS": "0"})
+    except ValueError as exc:
+        assert "AI_REQUEST_TIMEOUT_SECONDS" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("non-positive AI timeout was accepted")
 
 
 def test_browser_capture_policy_defaults_to_review_and_parses_explicit_override():

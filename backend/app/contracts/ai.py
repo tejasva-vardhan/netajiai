@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 Intent = Literal["casual", "scheme", "filing", "status", "continuation"]
@@ -36,6 +36,22 @@ class ComplaintDraftRequest(BaseModel):
 
     text: str = Field(min_length=1, max_length=10_000)
     language: str | None = Field(default=None, min_length=2, max_length=40)
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("text must not be blank")
+        return cleaned
+
+
+class CasualReply(BaseModel):
+    """Bounded, non-authoritative response from the general-chat handler."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class VoiceDraftRequest(BaseModel):
