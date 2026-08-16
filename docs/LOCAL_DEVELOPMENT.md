@@ -10,8 +10,8 @@ durable local infrastructure services.
 The generated, ignored `.env` files are already present for this workspace.
 Set these two values in the repository-root `.env` before starting the API:
 
-- `MISTRAL_API_KEY` — a Mistral API key for complaint extraction and
-  conversation classification.
+- `MISTRAL_API_KEY` — a Mistral API key for conversation classification,
+  complaint extraction, and bounded general-chat replies.
 - `DEEPGRAM_API_KEY` — a Deepgram API key for verified-audio transcription.
 
 These are the only intentionally blank application values. They cannot be

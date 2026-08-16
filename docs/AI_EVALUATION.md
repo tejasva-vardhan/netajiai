@@ -14,8 +14,9 @@ The conversation boundary also runs the deterministic
 `DeterministicToneGovernor` before rendering casual responses. Its refusal
 categories and explicit-threat cases are covered by
 `backend/tests/test_tone_governor.py` and the conversation HTTP test. A
-provider/model must not be allowed to bypass this policy; filing and reviewed
-scheme turns remain separate constrained paths.
+provider/model must not be allowed to bypass this policy. Allowed casual turns
+are handled by the bounded casual-chat agent; filing and reviewed scheme turns
+remain separate constrained paths, while status is a receipt lookup handoff.
 
 Department replies use the separate deterministic
 `DeterministicWeakReplyClassifier`. Its output is a review signal, not a

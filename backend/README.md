@@ -376,8 +376,10 @@ as required by `AGENTS.md`.
 
 The lazy construction adapter is available at
 `backend.app.infrastructure.ai.build_agno_orchestrator`. It supports
-`AI_PROVIDER=mistral`, uses the configured `AI_MODEL`, creates two tool-free
-structured-output agents, and makes no provider call during construction. The
+`AI_PROVIDER=mistral`, uses the configured `AI_MODEL`, applies the bounded
+`AI_REQUEST_TIMEOUT_SECONDS` provider deadline, and creates three tool-free
+agents behind one provider-neutral port (intent routing, complaint extraction,
+and bounded casual chat), and makes no provider call during construction. The
 deployment composition root must inject its result into `create_app`; the API
 does not silently construct a model client or fall back to a fake in production.
 Supply `MISTRAL_API_KEY` through the secret manager; the test suite never calls
@@ -402,6 +404,11 @@ quotas, and human fallback remain deployment decisions.
 
 Global launch gates are maintained in
 [`../docs/ACTION_REQUIRED.md`](../docs/ACTION_REQUIRED.md).
+
+- Verification-start requests use the stricter `identity` policy; authenticated
+  status reads use the separate `identity_status` policy so normal page loads,
+  refreshes, and provider return polling do not exhaust the start-flow bucket.
+  Rate-limit and `Retry-After` headers are exposed to the web client.
 
 - Finance/platform must replace the example `AI_MONTHLY_REQUEST_LIMIT` and
   `VOICE_MONTHLY_REQUEST_LIMIT` values with approved launch caps, then configure
