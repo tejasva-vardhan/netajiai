@@ -1,5 +1,6 @@
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
@@ -16,7 +17,7 @@ const issuer = process.env.EXPO_PUBLIC_OIDC_ISSUER?.trim() ?? "";
 const clientId = process.env.EXPO_PUBLIC_OIDC_CLIENT_ID?.trim() ?? "";
 const scopes = (process.env.EXPO_PUBLIC_OIDC_SCOPES ?? "openid profile")
   .split(/[ ,]+/)
-  .map((scope) => scope.trim())
+  .map((scope: string) => scope.trim())
   .filter(Boolean);
 
 export default function VerifyScreen() {
@@ -43,6 +44,7 @@ function SetupRequired() {
 }
 
 function ConfiguredVerification({ issuer, clientId }: { issuer: string; clientId: string }) {
+  const router = useRouter();
   const discovery = AuthSession.useAutoDiscovery(issuer);
   const redirectUri = useMemo(
     () => AuthSession.makeRedirectUri({ scheme: "aineta", path: "auth/callback" }),
@@ -74,10 +76,14 @@ function ConfiguredVerification({ issuer, clientId }: { issuer: string; clientId
   }
 
   useEffect(() => {
-    void getAccessToken().then((token) => {
-      setAccessToken(token);
-      if (token) void refreshStatus();
-    });
+    void getAccessToken()
+      .then((token) => {
+        setAccessToken(token);
+        if (token) void refreshStatus();
+      })
+      .catch(() => {
+        setError("Secure sign-in session nahi padh pa rahe. Dobara sign-in karein.");
+      });
   }, []);
 
   useEffect(() => {
@@ -101,7 +107,7 @@ function ConfiguredVerification({ issuer, clientId }: { issuer: string; clientId
       discovery,
     )
       .then(async (tokenResponse) => {
-        await saveAccessToken(tokenResponse.accessToken);
+        await saveAccessToken(tokenResponse.accessToken, tokenResponse.refreshToken);
         setAccessToken(tokenResponse.accessToken);
         setVerification(await getIdentityVerificationStatus());
       })
@@ -179,6 +185,9 @@ function ConfiguredVerification({ issuer, clientId }: { issuer: string; clientId
       )}
       <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => void refreshStatus()}>
         <Text style={styles.secondaryButtonText}>Status dobara dekhein</Text>
+      </Pressable>
+      <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
+        <Text style={styles.secondaryButtonText}>💬  Baat par wapas jaayein</Text>
       </Pressable>
       {!!error && <Text style={styles.error}>{error}</Text>}
     </ScrollView>

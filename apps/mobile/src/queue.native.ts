@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
-import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
+import { getStoredValue, setStoredValue } from "./storage";
 
 export type Capture = {
   id: string;
@@ -28,10 +28,10 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 async function getDatabaseKey(): Promise<string> {
-  const existing = await SecureStore.getItemAsync(DATABASE_KEY_NAME);
+  const existing = await getStoredValue(DATABASE_KEY_NAME);
   if (existing) return existing;
   const generated = bytesToHex(await Crypto.getRandomBytesAsync(32));
-  await SecureStore.setItemAsync(DATABASE_KEY_NAME, generated);
+  await setStoredValue(DATABASE_KEY_NAME, generated);
   return generated;
 }
 
@@ -67,10 +67,38 @@ export async function queueCapture(capture: QueuedCapture): Promise<void> {
 
 export async function listQueuedCaptures(): Promise<QueuedCapture[]> {
   const db = await getDatabase();
-  const rows = await db.getAllAsync<{ payload: string }>(
-    "SELECT payload FROM capture_queue ORDER BY created_at ASC",
+  const rows = await db.getAllAsync<{ id: string; payload: string }>(
+    "SELECT id, payload FROM capture_queue ORDER BY created_at ASC",
   );
-  return rows.map((row) => JSON.parse(row.payload) as QueuedCapture);
+  const captures: QueuedCapture[] = [];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.payload) as Partial<QueuedCapture>;
+      if (
+        typeof parsed.id !== "string"
+        || parsed.id !== row.id
+        || typeof parsed.photoUri !== "string"
+        || typeof parsed.audioUri !== "string"
+        || typeof parsed.latitude !== "number"
+        || !Number.isFinite(parsed.latitude)
+        || typeof parsed.longitude !== "number"
+        || !Number.isFinite(parsed.longitude)
+        || typeof parsed.accuracyM !== "number"
+        || !Number.isFinite(parsed.accuracyM)
+        || typeof parsed.issueType !== "string"
+        || typeof parsed.description !== "string"
+        || typeof parsed.language !== "string"
+        || typeof parsed.authSessionId !== "string"
+      ) {
+        throw new Error("invalid queued capture");
+      }
+      captures.push(parsed as QueuedCapture);
+    } catch {
+      // A corrupt local row must not poison every later retry attempt.
+      await db.runAsync("DELETE FROM capture_queue WHERE id = ?", row.id);
+    }
+  }
+  return captures;
 }
 
 export async function removeQueuedCapture(id: string): Promise<void> {

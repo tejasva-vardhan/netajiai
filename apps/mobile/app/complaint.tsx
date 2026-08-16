@@ -4,8 +4,7 @@ import * as Location from "expo-location";
 import * as Speech from "expo-speech";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import { File } from "expo-file-system";
-import * as SecureStore from "expo-secure-store";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
@@ -26,17 +25,50 @@ import {
   EvidenceReviewPendingError,
   submitCapturedComplaint,
 } from "../src/submission";
+import {
+  isPendingFilingDraftActive,
+  PENDING_FILING_DRAFT_KEY,
+  parsePendingFilingDraft,
+} from "../src/conversation";
+import type { PendingFilingDraft } from "../src/conversation";
+import { deleteStoredValue, getStoredValue, setStoredValue } from "../src/storage";
 
 type Stage = "photo" | "category" | "voice" | "confirm" | "sending" | "disclosure" | "receipt";
 
 const CATEGORY_CACHE_KEY = "aineta.complaint_category_catalog";
 
+async function getCaptureLocation(): Promise<Location.LocationObject> {
+  // A recent cached fix avoids blocking the camera on devices that need a new
+  // GPS lock indoors. It is still bounded by age and accuracy before use.
+  const lastKnown = await Location.getLastKnownPositionAsync({
+    maxAge: 2 * 60_000,
+    requiredAccuracy: 500,
+  }).catch(() => null);
+  if (lastKnown) return lastKnown;
+
+  try {
+    return await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+      mayShowUserSettingsDialog: true,
+    });
+  } catch {
+    // Some devices only return a fix after the higher-accuracy provider is
+    // explicitly requested. Keep that as the final supported fallback.
+    return Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+      mayShowUserSettingsDialog: true,
+    });
+  }
+}
+
 export default function ComplaintScreen() {
+  const router = useRouter();
   const cameraRef = useRef<CameraView>(null);
   const submissionId = useRef(Crypto.randomUUID());
   const [permission, requestPermission] = useCameraPermissions();
   const [stage, setStage] = useState<Stage>("photo");
   const [categories, setCategories] = useState<ComplaintCategory[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<ComplaintCategory | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
@@ -49,6 +81,11 @@ export default function ComplaintScreen() {
   const [disclosureBusy, setDisclosureBusy] = useState(false);
   const [error, setError] = useState("");
   const [verificationReady, setVerificationReady] = useState<boolean | null>(null);
+  const [pendingFiling, setPendingFiling] = useState<PendingFilingDraft | null>(null);
+  const pendingDescriptionRef = useRef<string | null>(null);
+  const descriptionTouchedRef = useRef(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
 
@@ -72,6 +109,57 @@ export default function ComplaintScreen() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    void getStoredValue(PENDING_FILING_DRAFT_KEY)
+      .then(async (raw) => {
+        if (!active) return;
+        const handoff = parsePendingFilingDraft(raw);
+        if (!handoff) {
+          if (raw) {
+            try {
+              await deleteStoredValue(PENDING_FILING_DRAFT_KEY);
+            } catch {
+              // A malformed/expired handoff is never used, even if cleanup is delayed.
+            }
+          }
+          return;
+        }
+        if (!active) return;
+        setPendingFiling(handoff);
+        pendingDescriptionRef.current = handoff.description;
+        setDescription((current) => current || handoff.description);
+      })
+      .catch(() => {
+        // A missing local handoff only means the citizen can start from capture.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingFiling) return;
+    const expire = (): void => {
+      setPendingFiling(null);
+      const handoffDescription = pendingDescriptionRef.current;
+      pendingDescriptionRef.current = null;
+      if (handoffDescription) {
+        setDescription((current) => current === handoffDescription ? "" : current);
+      }
+      void deleteStoredValue(PENDING_FILING_DRAFT_KEY).catch(() => {
+        // Expired handoffs are never used again; storage cleanup can retry later.
+      });
+    };
+    const remaining = pendingFiling.expiresAt - Date.now();
+    if (remaining <= 0) {
+      expire();
+      return;
+    }
+    const timer = setTimeout(expire, remaining);
+    return () => clearTimeout(timer);
+  }, [pendingFiling]);
+
+  useEffect(() => {
     if (stage !== "disclosure") return;
     Speech.stop();
     Speech.speak(
@@ -81,39 +169,129 @@ export default function ComplaintScreen() {
   }, [stage]);
 
   useEffect(() => {
-    let active = true;
-    void getComplaintCategories()
-      .then(async (catalog) => {
-        await SecureStore.setItemAsync(CATEGORY_CACHE_KEY, JSON.stringify(catalog));
-        if (active) setCategories(catalog.items);
-      })
-      .catch(async () => {
-        const cached = await SecureStore.getItemAsync(CATEGORY_CACHE_KEY);
-        if (!cached || !active) return;
-        try {
-          const catalog = JSON.parse(cached) as { items?: ComplaintCategory[] };
-          if (Array.isArray(catalog.items)) setCategories(catalog.items);
-        } catch {
-          // Ignore a corrupt cache; the online catalogue will be retried next launch.
-        }
-      });
-    return () => {
-      active = false;
-    };
+    void loadCategories();
   }, []);
 
-  async function capturePhoto() {
+  useEffect(() => {
+    if (
+      stage !== "category"
+      || !isPendingFilingDraftActive(pendingFiling)
+      || !pendingFiling.issueType
+      || !categories.length
+    ) return;
+    const category = categories.find((item) => item.code === pendingFiling.issueType);
+    if (!category) return;
+    setSelectedCategory(category);
+    Speech.stop();
+    Speech.speak(category.spoken_hi, { language: "hi-IN", rate: 0.88 });
+    setStage("voice");
+  }, [categories, pendingFiling, stage]);
+
+  async function loadCategories(): Promise<void> {
+    setCategoriesLoading(true);
     setError("");
-    const services = await Location.hasServicesEnabledAsync();
-    if (!services) return setError("Location on karke phir photo lein.");
-    const locationPermission = await Location.requestForegroundPermissionsAsync();
-    if (locationPermission.status !== "granted") return setError("Location permission zaroori hai.");
-    const nextLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-    const photo = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
-    if (!photo?.uri) return setError("Photo nahi li ja saki. Dobara try karein.");
-    setPhotoUri(photo.uri);
-    setLocation(nextLocation);
-    setStage("category");
+    try {
+      const catalog = await getComplaintCategories();
+      try {
+        await setStoredValue(CATEGORY_CACHE_KEY, JSON.stringify(catalog));
+      } catch {
+        // The API response remains authoritative when cache storage is unavailable.
+      }
+      setCategories(catalog.items);
+      return;
+    } catch {
+      let cached: string | null = null;
+      try {
+        cached = await getStoredValue(CATEGORY_CACHE_KEY);
+      } catch {
+        // Continue to the actionable error below.
+      }
+      if (cached) {
+        try {
+          const catalog = JSON.parse(cached) as { items?: ComplaintCategory[] };
+          if (Array.isArray(catalog.items) && catalog.items.length > 0) {
+            setCategories(catalog.items);
+            return;
+          }
+        } catch {
+          // Ignore a corrupt cache and keep the retry action available.
+        }
+      }
+      setError("Categories load nahi hui. Internet jodkar dobara koshish karein.");
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }
+
+  async function capturePhoto() {
+    if (photoBusy) return;
+    setPhotoBusy(true);
+    setError("");
+    try {
+      const services = await Location.hasServicesEnabledAsync();
+      if (!services) {
+        setError("Location on karke phir photo lein.");
+        return;
+      }
+      const locationPermission = await Location.requestForegroundPermissionsAsync();
+      if (locationPermission.status !== "granted") {
+        setError("Location permission zaroori hai.");
+        return;
+      }
+      const nextLocation = await getCaptureLocation();
+      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
+      if (!photo?.uri) {
+        setError("Photo nahi li ja saki. Dobara try karein.");
+        return;
+      }
+      setPhotoUri(photo.uri);
+      setLocation(nextLocation);
+      let storedHandoff: string | null = null;
+      try {
+        storedHandoff = await getStoredValue(PENDING_FILING_DRAFT_KEY);
+      } catch {
+        // Capture can continue without a persisted chat handoff.
+      }
+      const activePendingFiling = isPendingFilingDraftActive(pendingFiling)
+        ? pendingFiling
+        : null;
+      const handoff = descriptionTouchedRef.current
+        ? null
+        : activePendingFiling ?? parsePendingFilingDraft(storedHandoff);
+      if (!activePendingFiling && pendingFiling) {
+        setPendingFiling(null);
+        const handoffDescription = pendingDescriptionRef.current;
+        pendingDescriptionRef.current = null;
+        if (handoffDescription) {
+          setDescription((current) => current === handoffDescription ? "" : current);
+        }
+      }
+      if (!handoff && storedHandoff) {
+        try {
+          await deleteStoredValue(PENDING_FILING_DRAFT_KEY);
+        } catch {
+          // The invalid handoff is still ignored for this capture.
+        }
+      }
+      if (handoff) {
+        setPendingFiling(handoff);
+        pendingDescriptionRef.current = handoff.description;
+        setDescription((current) => current || handoff.description);
+      }
+      setStage(handoff?.issueType ? "voice" : "category");
+      if (handoff?.issueType) {
+        const category = categories.find((item) => item.code === handoff.issueType);
+        if (category) {
+          setSelectedCategory(category);
+          Speech.stop();
+          Speech.speak(category.spoken_hi, { language: "hi-IN", rate: 0.88 });
+        }
+      }
+    } catch (captureError) {
+      setError(captureError instanceof Error ? captureError.message : "Photo ya location nahi mil saki. Dobara try karein.");
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   function chooseCategory(category: ComplaintCategory): void {
@@ -124,19 +302,41 @@ export default function ComplaintScreen() {
   }
 
   async function startVoice() {
+    if (voiceBusy || recorderState.isRecording) return;
+    setVoiceBusy(true);
     setError("");
-    const permissionStatus = await AudioModule.requestRecordingPermissionsAsync();
-    if (!permissionStatus.granted) return setError("Voice note ke liye microphone permission zaroori hai.");
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
+    try {
+      const permissionStatus = await AudioModule.requestRecordingPermissionsAsync();
+      if (!permissionStatus.granted) {
+        setError("Voice note ke liye microphone permission zaroori hai.");
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+    } catch (recordingError) {
+      setError(recordingError instanceof Error ? recordingError.message : "Voice note shuru nahi ho saki. Dobara try karein.");
+    } finally {
+      setVoiceBusy(false);
+    }
   }
 
   async function stopVoice() {
-    await recorder.stop();
-    if (!recorder.uri) return setError("Voice note nahi mili. Dobara record karein.");
-    setAudioUri(recorder.uri);
-    setStage("confirm");
+    if (voiceBusy || !recorderState.isRecording) return;
+    setVoiceBusy(true);
+    try {
+      await recorder.stop();
+      if (!recorder.uri) {
+        setError("Voice note nahi mili. Dobara record karein.");
+        return;
+      }
+      setAudioUri(recorder.uri);
+      setStage("confirm");
+    } catch (recordingError) {
+      setError(recordingError instanceof Error ? recordingError.message : "Voice note save nahi ho saki. Dobara try karein.");
+    } finally {
+      setVoiceBusy(false);
+    }
   }
 
   function readBackText(currentDraft: ComplaintDraft): string {
@@ -182,7 +382,13 @@ export default function ComplaintScreen() {
               issue_type: selectedCategory.code,
               missing_fields: extractedDraft.missing_fields.filter((field) => field !== "issue_type"),
             }
-          : extractedDraft;
+            : isPendingFilingDraftActive(pendingFiling) && pendingFiling.issueType && !extractedDraft.issue_type
+            ? {
+                ...extractedDraft,
+                issue_type: pendingFiling.issueType,
+                missing_fields: extractedDraft.missing_fields.filter((field) => field !== "issue_type"),
+              }
+            : extractedDraft;
         setDraft(nextDraft);
         if (nextDraft.missing_fields.length > 0 || !nextDraft.issue_type) {
           setError("Baat poori samajh nahi aayi. Issue ka naam bhi batayein, jaise sadak, paani ya light.");
@@ -249,6 +455,11 @@ export default function ComplaintScreen() {
         // Secure-store persistence improves the next visit but must not turn a
         // server-confirmed complaint into a false submission failure.
       }
+      try {
+        await deleteStoredValue(PENDING_FILING_DRAFT_KEY);
+      } catch {
+        // A completed complaint must remain successful if local cleanup fails.
+      }
       setComplaintId(result.complaint_id);
       setReceipt(result.tracking_token);
       setStage("disclosure");
@@ -300,7 +511,7 @@ export default function ComplaintScreen() {
   }
 
   if (stage === "receipt") {
-    return <View style={styles.container}><Text style={styles.title}>Shikayat bhej di gayi ✅</Text><Text style={styles.help}>Is receipt token ko sambhal kar rakhein:</Text><Text selectable style={styles.receipt}>{receipt}</Text><Text style={styles.note}>Isi token se shikayat ka haal dekha ja sakta hai.</Text><Link href="/track" style={styles.button}>🔊  Abhi status dekhein</Link></View>;
+    return <View style={styles.container}><Text style={styles.title}>Shikayat bhej di gayi ✅</Text><Text style={styles.help}>Is receipt token ko sambhal kar rakhein:</Text><Text selectable style={styles.receipt}>{receipt}</Text><Text style={styles.note}>Isi token se shikayat ka haal dekha ja sakta hai.</Text><Pressable style={styles.button} onPress={() => router.back()}><Text style={styles.buttonText}>💬  Baat par wapas jaayein</Text></Pressable><Link href="/track" style={styles.secondaryButton}>🔊  Abhi status dekhein</Link></View>;
   }
   if (stage === "disclosure") {
     return <View style={styles.container}>
@@ -316,6 +527,9 @@ export default function ComplaintScreen() {
   if (stage === "sending") {
     return <View style={styles.container}><Text style={styles.title}>Thoda rukhein…</Text><Text style={styles.help}>Photo aur voice note surakshit tareeke se bheje ja rahe hain.</Text></View>;
   }
+  if (verificationReady === null) {
+    return <View style={styles.container}><Text style={styles.title}>Pehchaan status dekha ja raha hai…</Text><Text style={styles.help}>Ek pal rukhein, phir agla zaroori step khulega.</Text></View>;
+  }
   if (verificationReady !== true) {
     return <View style={styles.container}>
       <Text style={styles.title}>Pehle pehchaan verify karein</Text>
@@ -328,7 +542,7 @@ export default function ComplaintScreen() {
     return <View style={styles.container}><Text style={styles.title}>Photo zaroori hai</Text><Text style={styles.help}>Issue ki abhi photo lein. Gallery se photo nahi li jayegi.</Text><Pressable style={styles.button} onPress={requestPermission}><Text style={styles.buttonText}>Camera ki ijazat dein</Text></Pressable></View>;
   }
   if (stage === "photo") {
-    return <View style={styles.cameraPage}><CameraView ref={cameraRef} style={styles.camera} facing="back" /><View style={styles.cameraFooter}><Text style={styles.cameraHelp}>Issue ko frame mein laayein</Text><Pressable style={styles.shutter} onPress={capturePhoto}><Text style={styles.shutterText}>Photo lein</Text></Pressable></View></View>;
+    return <View style={styles.cameraPage}><CameraView ref={cameraRef} style={styles.camera} facing="back" /><View style={styles.cameraFooter}><Text style={styles.cameraHelp}>Issue ko frame mein laayein</Text><Pressable style={styles.shutter} onPress={() => void capturePhoto()} disabled={photoBusy}><Text style={styles.shutterText}>{photoBusy ? "Location mil rahi hai…" : "Photo lein"}</Text></Pressable>{!!error && <Text style={styles.cameraError}>{error}</Text>}</View></View>;
   }
   return <ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.step}>Step {stage === "category" ? "2" : stage === "voice" ? "3" : "4"} / 4</Text>
@@ -349,17 +563,18 @@ export default function ComplaintScreen() {
           </Pressable>
         ))}
       </View>
-      {!categories.length && <Text style={styles.error}>Categories load nahi hui. Internet jodkar dobara koshish karein.</Text>}
+      {categoriesLoading && <Text style={styles.note}>Categories load ho rahi hain…</Text>}
+      {!categoriesLoading && !categories.length && <Pressable style={styles.secondaryButton} onPress={() => void loadCategories()}><Text style={styles.secondaryButtonText}>🔄 Dobara categories load karein</Text></Pressable>}
     </> : stage === "voice" ? <>
       <Text style={styles.title}>Apni baat bolkar batayein</Text>
       <Text style={styles.help}>Chhoti voice note banayein. Isse officer ko baat samajhne mein madad milegi.</Text>
       {selectedCategory && <Text style={styles.selectedCategory}>{selectedCategory.icon} {selectedCategory.label_hi}</Text>}
-      <Pressable style={styles.button} onPress={recorderState.isRecording ? stopVoice : startVoice}><Text style={styles.buttonText}>{recorderState.isRecording ? "Voice note rokhein" : "Voice note shuru karein"}</Text></Pressable>
+      <Pressable style={styles.button} disabled={voiceBusy} onPress={() => void (recorderState.isRecording ? stopVoice() : startVoice())}><Text style={styles.buttonText}>{voiceBusy ? "Rukhein…" : recorderState.isRecording ? "Voice note rokhein" : "Voice note shuru karein"}</Text></Pressable>
       {recorderState.isRecording && <Text style={styles.recording}>● Record ho raha hai ({Math.round(recorderState.durationMillis / 1000)} sec)</Text>}
     </> : <>
       <Text style={styles.title}>{draft ? "Sunkar pakka karein" : "Bhejne se pehle dekhein"}</Text>
       <Text style={styles.help}>{draft ? "AI Neta ne aapki baat is tarah samjhi hai:" : "Photo aur voice note ke saath yeh baat bheji jayegi:"}</Text>
-      <TextInput multiline value={description} onChangeText={(value) => { setDescription(value); setDraft(null); Speech.stop(); }} placeholder="Bolkar batayein; chahein toh yahan likh bhi sakte hain" style={styles.textarea} />
+      <TextInput multiline value={description} onChangeText={(value) => { descriptionTouchedRef.current = true; setDescription(value); setDraft(null); Speech.stop(); }} placeholder="Bolkar batayein; chahein toh yahan likh bhi sakte hain" style={styles.textarea} />
       {draft && draft.issue_type && draft.description && <View style={styles.readBack}><Text style={styles.readBackTitle}>Issue: {draft.issue_type}</Text><Text style={styles.readBackText}>{draft.description}</Text><Pressable style={styles.secondaryButton} onPress={() => speakDraft(draft)}><Text style={styles.secondaryButtonText}>🔊  Dobara sunayein</Text></Pressable></View>}
       <Pressable style={styles.button} onPress={reviewOrSubmit} disabled={draftLoading}><Text style={styles.buttonText}>{draftLoading ? "Samjha ja raha hai…" : draft?.issue_type && draft.description ? "Haan, shikayat bhejein" : "Baat samjha kar dikhayein"}</Text></Pressable>
     </>}
@@ -373,6 +588,7 @@ const styles = StyleSheet.create({
   camera: { flex: 1 },
   cameraFooter: { padding: 24, alignItems: "center", backgroundColor: "#17221D" },
   cameraHelp: { color: "white", fontSize: 18, marginBottom: 16 },
+  cameraError: { color: "#FFD7D7", fontSize: 16, lineHeight: 23, textAlign: "center", marginTop: 16 },
   shutter: { backgroundColor: "#F3B63F", paddingVertical: 18, paddingHorizontal: 40, borderRadius: 14 },
   shutterText: { color: "#17221D", fontSize: 20, fontWeight: "800" },
   step: { color: "#0B6E4F", fontWeight: "800", letterSpacing: 1 },

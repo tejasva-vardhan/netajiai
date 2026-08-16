@@ -25,12 +25,17 @@ export default function TrackScreen() {
 
   useEffect(() => {
     let active = true;
-    void getLastReceiptToken().then((savedToken) => {
-      if (active && savedToken) {
-        setToken(savedToken);
-        setLastReceiptAvailable(true);
-      }
-    });
+    void getLastReceiptToken()
+      .then((savedToken) => {
+        if (active && savedToken) {
+          setToken(savedToken);
+          setLastReceiptAvailable(true);
+        }
+      })
+      .catch(() => {
+        // Manual token entry remains available when secure storage is locked
+        // or unavailable on the current device.
+      });
     return () => {
       active = false;
     };

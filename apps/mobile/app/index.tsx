@@ -1,8 +1,8 @@
-import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { Link } from "expo-router";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { getStoredValue, setStoredValue } from "../src/storage";
 
 const ONBOARDING_SEEN_KEY = "aineta.first_use_explainer_seen";
 
@@ -19,9 +19,13 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let active = true;
-    void SecureStore.getItemAsync(ONBOARDING_SEEN_KEY).then((seen) => {
-      if (active && !seen) setShowExplainer(true);
-    });
+    void getStoredValue(ONBOARDING_SEEN_KEY)
+      .then((seen) => {
+        if (active && !seen) setShowExplainer(true);
+      })
+      .catch(() => {
+        // If the onboarding flag cannot be read, keep the landing page usable.
+      });
     return () => {
       active = false;
       Speech.stop();
@@ -36,7 +40,11 @@ export default function HomeScreen() {
 
   async function closeExplainer(): Promise<void> {
     Speech.stop();
-    await SecureStore.setItemAsync(ONBOARDING_SEEN_KEY, "1");
+    try {
+      await setStoredValue(ONBOARDING_SEEN_KEY, "1");
+    } catch {
+      // The explainer can still be dismissed if local persistence is unavailable.
+    }
     setShowExplainer(false);
   }
 
@@ -55,10 +63,8 @@ export default function HomeScreen() {
         <Pressable accessibilityRole="button" accessibilityLabel="Pehli baar ke liye AI Neta kaise kaam karta hai sunayein" onPress={() => setShowExplainer(true)} style={styles.explainerLink}>
           <Text style={styles.explainerLinkText}>🔊  Pehli baar? Sun kar samjhein</Text>
         </Pressable>
-        <Link href="/verify" style={styles.verify}>✅  Pehchaan verify karein</Link>
-        <Link href="/chat" style={styles.chat}>💬  AI Neta se baat karein</Link>
-        <Link href="/complaint" style={styles.primary}>📷  Shikayat darj karein</Link>
-        <Link href="/track" style={styles.secondary}>🔎  Shikayat dekhein</Link>
+        <Link href="/chat" style={styles.primary}>💬  AI Neta se baat karein</Link>
+        <Text style={styles.chatHelp}>Complaint, status aur verified yojana ki baat isi chat mein karein.</Text>
         <Text style={styles.note}>Aapki receipt private rahegi. Public tracking mein sirf zaroori status dikhega.</Text>
       </View>
       <Modal visible={showExplainer} animationType="slide" onRequestClose={() => void closeExplainer()}>
@@ -97,9 +103,7 @@ const styles = StyleSheet.create({
   explainerLink: { marginTop: 22, padding: 10, alignSelf: "center" },
   explainerLinkText: { color: "#0B6E4F", fontSize: 17, fontWeight: "800" },
   primary: { marginTop: 34, backgroundColor: "#0B6E4F", color: "white", padding: 20, borderRadius: 16, textAlign: "center", fontSize: 20, fontWeight: "800" },
-  verify: { marginTop: 26, color: "#0B6E4F", padding: 10, textAlign: "center", fontSize: 17, fontWeight: "800" },
-  chat: { marginTop: 12, color: "#0B6E4F", padding: 10, textAlign: "center", fontSize: 17, fontWeight: "800" },
-  secondary: { marginTop: 14, borderWidth: 2, borderColor: "#0B6E4F", color: "#0B6E4F", padding: 18, borderRadius: 16, textAlign: "center", fontSize: 19, fontWeight: "700" },
+  chatHelp: { marginTop: 14, fontSize: 16, lineHeight: 24, color: "#5D6D65", textAlign: "center" },
   note: { marginTop: 28, fontSize: 14, lineHeight: 21, color: "#5D6D65", textAlign: "center" },
   modalContainer: { flexGrow: 1, padding: 28, paddingTop: 76, paddingBottom: 40, backgroundColor: "#FFFDF7" },
   modalKicker: { color: "#0B6E4F", fontWeight: "800", letterSpacing: 2, fontSize: 14 },

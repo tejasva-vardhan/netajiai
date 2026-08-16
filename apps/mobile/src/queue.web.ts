@@ -17,6 +17,11 @@ export type QueuedCapture = Capture & {
 const queue: QueuedCapture[] = [];
 
 export async function queueCapture(capture: QueuedCapture): Promise<void> {
+  const existingIndex = queue.findIndex((item) => item.id === capture.id);
+  if (existingIndex >= 0) {
+    queue[existingIndex] = capture;
+    return;
+  }
   queue.push(capture);
 }
 

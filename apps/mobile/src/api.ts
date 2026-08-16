@@ -1,10 +1,32 @@
-import * as SecureStore from "expo-secure-store";
+import * as AuthSession from "expo-auth-session";
 import * as Crypto from "expo-crypto";
+import { CONVERSATION_SESSION_KEY, PENDING_FILING_DRAFT_KEY } from "./conversation";
+import { deleteStoredValue, getStoredValue, setStoredValue } from "./storage";
 
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8001").replace(/\/$/, "");
 const TOKEN_KEY = "aineta.access_token";
+const REFRESH_TOKEN_KEY = "aineta.refresh_token";
 const AUTH_SESSION_KEY = "aineta.auth_session_id";
 const LAST_RECEIPT_TOKEN_KEY = "aineta.last_receipt_token";
+const oidcIssuer = process.env.EXPO_PUBLIC_OIDC_ISSUER?.trim() ?? "";
+const oidcClientId = process.env.EXPO_PUBLIC_OIDC_CLIENT_ID?.trim() ?? "";
+const oidcScopes = (process.env.EXPO_PUBLIC_OIDC_SCOPES ?? "openid profile")
+  .split(/[ ,]+/)
+  .map((scope: string) => scope.trim())
+  .filter(Boolean);
+
+let activeRefresh: Promise<string | null> | null = null;
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly retryAfterSeconds: number | null = null,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export type LocationCapture = {
   latitude: number;
@@ -157,42 +179,144 @@ export type ComplaintCategoryCatalog = {
 };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+  return requestWithRefresh<T>(path, init, true);
+}
+
+async function requestWithRefresh<T>(
+  path: string,
+  init: RequestInit,
+  allowRefresh: boolean,
+): Promise<T> {
+  const token = await getStoredValue(TOKEN_KEY);
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
+    if (response.status === 401 && allowRefresh && await refreshAccessToken()) {
+      return requestWithRefresh<T>(path, init, false);
+    }
     const body = await response.text();
-    throw new Error(body || `Request failed (${response.status})`);
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown };
+      if (typeof parsed.detail === "string") detail = parsed.detail;
+    } catch {
+      // Keep non-JSON provider/proxy responses readable below.
+    }
+    if (response.status === 401) throw new ApiError(401, "Aapka session expire ho gaya. Dobara sign-in karein.");
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get("Retry-After");
+      const retryAfterSeconds = retryAfterHeader && /^\d+$/.test(retryAfterHeader)
+        ? Number.parseInt(retryAfterHeader, 10)
+        : null;
+      const waitMessage = retryAfterSeconds && retryAfterSeconds < 3600
+        ? ` ${Math.max(Math.ceil(retryAfterSeconds / 60), 1)} minute(s) baad dobara koshish karein.`
+        : " Thodi der baad dobara koshish karein.";
+      throw new ApiError(429, `Bahut zyada requests.${waitMessage}`, retryAfterSeconds);
+    }
+    throw new ApiError(response.status, detail || `Request failed (${response.status})`);
   }
   return (await response.json()) as T;
 }
 
-export async function saveAccessToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-  // This is a local queue binding, not an authentication credential.
-  await SecureStore.setItemAsync(AUTH_SESSION_KEY, Crypto.randomUUID());
+export async function saveAccessToken(token: string, refreshToken?: string): Promise<void> {
+  // These capabilities belong to the previous authenticated account. Do not
+  // let a sign-in transition reuse its conversation, draft, or receipt.
+  const cleared = await Promise.all([
+    clearStoredValue(CONVERSATION_SESSION_KEY),
+    clearStoredValue(PENDING_FILING_DRAFT_KEY),
+    clearStoredValue(LAST_RECEIPT_TOKEN_KEY),
+  ]);
+  if (cleared.some((value) => !value)) {
+    throw new Error("Secure local session storage is unavailable");
+  }
+
+  try {
+    await setStoredValue(TOKEN_KEY, token);
+    if (refreshToken) {
+      await setStoredValue(REFRESH_TOKEN_KEY, refreshToken);
+    } else {
+      await deleteStoredValue(REFRESH_TOKEN_KEY);
+    }
+    // This is a local queue binding, not an authentication credential.
+    await setStoredValue(AUTH_SESSION_KEY, Crypto.randomUUID());
+  } catch (error) {
+    // Do not leave a partially activated account behind if one secure-store
+    // write fails during the sign-in transition.
+    await Promise.all([
+      clearStoredValue(TOKEN_KEY),
+      clearStoredValue(REFRESH_TOKEN_KEY),
+      clearStoredValue(AUTH_SESSION_KEY),
+    ]);
+    throw error;
+  }
+}
+
+async function clearStoredValue(key: string): Promise<boolean> {
+  try {
+    await deleteStoredValue(key);
+    return true;
+  } catch {
+    try {
+      // An empty value is intentionally invalid for all capability readers and
+      // removes sensitive text even when the platform delete operation fails.
+      await setStoredValue(key, "");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function saveRefreshedAccessToken(token: string, refreshToken?: string): Promise<void> {
+  await setStoredValue(TOKEN_KEY, token);
+  if (refreshToken) await setStoredValue(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (activeRefresh) return activeRefresh;
+  activeRefresh = refreshAccessTokenInternal().finally(() => {
+    activeRefresh = null;
+  });
+  return activeRefresh;
+}
+
+async function refreshAccessTokenInternal(): Promise<string | null> {
+  const refreshToken = await getStoredValue(REFRESH_TOKEN_KEY);
+  if (!refreshToken || !oidcIssuer || !oidcClientId) return null;
+  try {
+    const discovery = await AuthSession.fetchDiscoveryAsync(oidcIssuer);
+    if (!discovery.tokenEndpoint) return null;
+    const tokenResponse = await AuthSession.refreshAsync(
+      { clientId: oidcClientId, refreshToken, scopes: oidcScopes },
+      discovery,
+    );
+    await saveRefreshedAccessToken(tokenResponse.accessToken, tokenResponse.refreshToken ?? refreshToken);
+    return tokenResponse.accessToken;
+  } catch {
+    return null;
+  }
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  return getStoredValue(TOKEN_KEY);
 }
 
 export async function getAuthSessionId(): Promise<string | null> {
-  return SecureStore.getItemAsync(AUTH_SESSION_KEY);
+  return getStoredValue(AUTH_SESSION_KEY);
 }
 
 /** Keep only the latest user-owned receipt capability in platform secure storage. */
 export async function saveLastReceiptToken(token: string): Promise<void> {
   const normalized = token.trim();
   if (!normalized) throw new Error("Receipt token is required");
-  await SecureStore.setItemAsync(LAST_RECEIPT_TOKEN_KEY, normalized);
+  await setStoredValue(LAST_RECEIPT_TOKEN_KEY, normalized);
 }
 
 export async function getLastReceiptToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(LAST_RECEIPT_TOKEN_KEY);
+  return getStoredValue(LAST_RECEIPT_TOKEN_KEY);
 }
 
 export async function startIdentityVerification(): Promise<{
