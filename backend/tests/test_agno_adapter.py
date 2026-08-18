@@ -37,8 +37,8 @@ def test_agno_adapter_requires_structured_output_and_does_not_mutate_domain():
     context = ConversationContext(
         session_id=uuid4(),
         language="en",
-        last_intent="filing",
-        last_next_action="start_filing",
+        last_intent="casual",
+        last_next_action="continue_chat",
         turn_count=1,
         complaint_draft=ComplaintExtraction(
             issue_type="road", description=None, language="en", confidence=0.8
@@ -129,6 +129,7 @@ def test_agno_adapter_falls_back_for_common_hinglish_filing_signals():
         ("Street light band hai", "streetlight"),
         ("Nali overflow ho rahi hai", "drainage"),
         ("Kachra nahi uthaya", "garbage"),
+        ("Ghar ke saamne dikkat hai sadak kharab hai", "road"),
     ):
         classification = orchestrator.classify_intent(text)
         assert classification.intent == "filing"
@@ -165,3 +166,42 @@ def test_agno_adapter_handles_a_greeting_without_a_provider_request():
 
     assert orchestrator.classify_intent("Namaste").intent == "casual"
     assert "civic problem" in orchestrator.respond_casual("Namaste").text
+
+
+def test_agno_adapter_keeps_verification_resume_on_filing_path_without_a_provider_call():
+    intent = RecordingAgent(IntentClassification(intent="casual", confidence=0.9, reason_code="model_guess"))
+    complaint = RecordingAgent(
+        ComplaintExtraction(issue_type=None, description=None, language="hi-IN", confidence=0.0)
+    )
+    orchestrator = AgnoAgentOrchestrator(intent, complaint)
+    context = ConversationContext(
+        session_id=uuid4(),
+        language="hi-IN",
+        last_intent="filing",
+        last_next_action="verify_identity",
+        turn_count=1,
+    )
+
+    classification = orchestrator.classify_intent("Yahan roz pareshani ho rahi hai morning se", context=context)
+
+    assert classification.intent == "filing"
+    assert classification.reason_code == "deterministic_active_filing_context"
+    assert intent.calls == []
+
+
+def test_agno_adapter_falls_back_when_structured_model_output_is_invalid():
+    orchestrator = AgnoAgentOrchestrator(FailingAgent(), FailingAgent(), FailingAgent())
+    context = ConversationContext(
+        session_id=uuid4(),
+        language="hi-IN",
+        last_intent="filing",
+        last_next_action="start_filing",
+        turn_count=2,
+    )
+
+    assert orchestrator.classify_intent("Could you help me understand this").intent == "casual"
+    extraction = orchestrator.extract_complaint("Ghar ke saamne dikkat hai", language="hi-IN")
+    assert extraction.issue_type is None
+    assert extraction.missing_fields == ["issue_type"]
+    assert "civic problem" in orchestrator.respond_casual("How can you help?", language="en").text
+    assert orchestrator.classify_intent("Ghar ke saamne dikkat hai", context=context).intent == "filing"

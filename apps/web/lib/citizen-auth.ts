@@ -36,6 +36,10 @@ export function getCitizenUserManager(): UserManager | null {
     // Refresh the short-lived access token with the OIDC refresh token while
     // the citizen keeps the tab open. A 401 still requires an explicit sign-in.
     automaticSilentRenew: true,
+    // The IdP is on another origin/port than the web app. Keycloak's
+    // check-session iframe then looks like a third-party cookie and Chrome
+    // reports a false logout, which the filing page surfaces as expiry.
+    monitorSession: false,
     loadUserInfo: false,
     // Keep the citizen session across a same-tab reload without putting the
     // bearer token in long-lived localStorage.

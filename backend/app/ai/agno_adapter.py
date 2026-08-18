@@ -94,25 +94,21 @@ class AgnoAgentOrchestrator:
                 confidence=0.9,
                 reason_code="deterministic_greeting_signal",
             )
+        if _active_filing_context(context):
+            return IntentClassification(
+                intent="filing",
+                confidence=0.8,
+                reason_code="deterministic_active_filing_context",
+            )
         try:
             response = self.intent_agent.run(
                 input=_with_context(text, context),
                 output_schema=IntentClassification,
                 stream=False,
             )
-            classification = _validated_content(response, IntentClassification)
-        except Exception as exc:
-            if not (
-                _obvious_status_signal(text)
-                or _obvious_scheme_signal(text)
-                or _obvious_filing_signal(text)
-                or _obvious_continuation_signal(text, context)
-            ):
-                raise AgnoRuntimeError("Mistral intent classification failed") from exc
-            classification = None
-        if classification is None:
-            raise AgnoRuntimeError("Mistral returned an invalid intent classification")
-        return classification
+            return _validated_content(response, IntentClassification)
+        except Exception:
+            return _fallback_intent(context)
 
     def extract_complaint(
         self,
@@ -138,9 +134,18 @@ class AgnoAgentOrchestrator:
             extraction = _validated_content(response, ComplaintExtraction)
         except Exception as exc:
             fallback = _deterministic_complaint(text, language)
-            if fallback is None:
+            if fallback is not None:
+                return fallback
+            cleaned = text.strip()
+            if not cleaned:
                 raise AgnoRuntimeError("Mistral complaint extraction failed") from exc
-            return fallback
+            return ComplaintExtraction(
+                issue_type=None,
+                description=cleaned,
+                language=language or "unknown",
+                missing_fields=["issue_type"],
+                confidence=0.2,
+            )
         return extraction
 
     def respond_casual(
@@ -166,8 +171,10 @@ class AgnoAgentOrchestrator:
                 stream=False,
             )
             return _validated_content(response, CasualReply)
-        except Exception as exc:
-            raise AgnoRuntimeError("Mistral casual response failed") from exc
+        except Exception:
+            return CasualReply(
+                text="Namaste! Main aapki baat sunne aur civic problem mein madad karne ke liye yahan hoon."
+            )
 
 
 def _with_context(text: str, context: ConversationContext | None) -> str:
@@ -243,8 +250,19 @@ def _obvious_filing_signal(text: str) -> bool:
             "nala",
             "sadak",
             "gaddha",
+            "gali",
             "paani",
+            "dikkat",
+            "problem",
+            "issue",
+            "kharab",
+            "leakage",
+            "bijli",
+            "toot",
+            "band hai",
+            "bhar gaya",
             "समस्या",
+            "दिक्कत",
             "पानी",
             "गड्ढा",
             "सड़क",
@@ -299,6 +317,33 @@ def _obvious_scheme_signal(text: str) -> bool:
             "पात्रता",
             "लाभ",
         )
+    )
+
+
+def _active_filing_context(context: ConversationContext | None) -> bool:
+    return context is not None and context.last_next_action in {
+        "verify_identity",
+        "start_filing",
+    }
+
+
+def _fallback_intent(context: ConversationContext | None) -> IntentClassification:
+    if _active_filing_context(context):
+        return IntentClassification(
+            intent="filing",
+            confidence=0.6,
+            reason_code="provider_fallback_active_filing",
+        )
+    if context is not None and context.last_next_action == "provide_receipt":
+        return IntentClassification(
+            intent="status",
+            confidence=0.6,
+            reason_code="provider_fallback_status_context",
+        )
+    return IntentClassification(
+        intent="casual",
+        confidence=0.4,
+        reason_code="provider_fallback_casual",
     )
 
 

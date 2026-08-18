@@ -8,6 +8,14 @@
   "roles": {
     "realm": [
       { "name": "citizen", "description": "Local citizen account" },
+      {
+        "name": "default-roles-aineta",
+        "description": "${role_default-roles}",
+        "composite": true,
+        "composites": {
+          "realm": ["offline_access", "uma_authorization", "citizen"]
+        }
+      },
       { "name": "operator", "description": "Local department operator" },
       { "name": "admin", "description": "Local platform administrator" },
       { "name": "moderator", "description": "Local content moderator" }
@@ -34,6 +42,7 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:3000/auth/callback",
+        "http://localhost:3000/auth/silent-callback",
         "http://localhost:3000/admin/auth/callback"
       ],
       "webOrigins": ["http://localhost:3000"],

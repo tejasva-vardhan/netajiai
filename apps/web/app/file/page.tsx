@@ -41,6 +41,13 @@ type FailedTextTurn = { text: string; language: string; idempotencyKey: string }
 type UploadedAssetResult = { id: string; status: "verified" | "review_required" | "rejected" };
 
 const voiceRequiredIssueTypes = new Set(["road", "water", "drainage", "streetlight", "garbage"]);
+const issueCategories = [
+  { code: "road", icon: "🛣️", label: "सड़क / गड्ढा" },
+  { code: "water", icon: "🚰", label: "पानी" },
+  { code: "garbage", icon: "🗑️", label: "कचरा" },
+  { code: "streetlight", icon: "💡", label: "स्ट्रीट लाइट" },
+  { code: "drainage", icon: "🌧️", label: "नाली / जलभराव" },
+] as const;
 const conversationSessionKey = "aineta.web.conversation_session_id";
 const conversationSubjectKey = "aineta.web.conversation_subject";
 const conversationModeKey = "aineta.web.conversation_mode";
@@ -237,6 +244,13 @@ export default function FileComplaintPage() {
     resetComplaintSubmissionKey();
     verificationResumeKeyRef.current = null;
     verificationResumeIdempotencyKeyRef.current = null;
+  }
+
+  function selectIssueType(code: string, label: string): void {
+    setDraftIssueType(code);
+    resetComplaintSubmissionKey();
+    addMessage("citizen", `Problem type: ${label}`);
+    addMessage("assistant", "Type mil gaya. Ab neeche diya hua agla step karein.");
   }
 
   function startNewComplaint(): void {
@@ -829,7 +843,7 @@ export default function FileComplaintPage() {
         {messages.map((message) => <div className={`chat-message chat-message-${message.role}`} key={message.id}><div className="chat-avatar" aria-hidden="true">{message.role === "assistant" ? "✦" : "Aap"}</div><div className="chat-bubble">{message.attachment && <span className="attachment-label">{message.attachment === "photo" ? "📷 Photo" : message.attachment === "audio" ? "🎙️ Voice note" : "📍 Location"}</span>}<p>{message.text}</p>{message.response && message.id === latestResponseId && <ConversationHandoff response={message.response} receiptToken={receiptToken} receiptStatus={receiptStatus} receiptStatusBusy={receiptStatusBusy} receiptStatusError={receiptStatusError} onReceiptTokenChange={setReceiptToken} onLookupReceipt={() => void lookupReceiptStatus()} />}</div></div>)}
         {cameraOpen && <div className="chat-camera"><video ref={videoRef} className="camera-preview" aria-label="Camera preview" playsInline muted />{!cameraReady && <p className="camera-status" role="status">Camera taiyaar ho rahi hai…</p>}<div className="actions"><button className="button button-primary" disabled={!cameraReady || busy} onClick={capturePhoto}>Photo lein</button><button className="button button-secondary" disabled={busy} onClick={stopCamera}>Band karein</button></div></div>}
         {conversationMode === "filing" && verification !== "verified" && <div className="chat-action-card"><p className="eyebrow">Pehchaan zaroori hai</p><h2>Complaint se pehle identity verify karein</h2><p>{verificationProvider === "temporary" ? "Abhi local placeholder verification available hai. Government DigiLocker verification approval ke baad connect hogi." : "Identity verification ke baad hi complaint submit hogi."}</p><div className="actions"><button className="button button-primary" disabled={busy || !verificationProvider} onClick={openVerificationChoice}>Verification kholein</button><button className="button button-secondary" disabled={busy} onClick={() => void refreshVerification()}>Status refresh</button></div></div>}
-        {nextGuidedStep === "description" && <div className="chat-action-card guided-action-card"><p className="eyebrow">Agla step</p><h2>{draftDescription && !draftIssueType ? "Problem ka type batayein" : "Apni problem batayein"}</h2><p>{draftDescription && !draftIssueType ? "Jaise sadak, paani, kachra ya streetlight—ek shabd mein bata dein." : "Do line mein likh dein, ya mic dabakar bol dein. Main usse complaint ka draft bana dunga."}</p><div className="guided-actions">{recording ? <button className="button button-primary full-width" type="button" disabled={recordingBusy} onClick={stopAudio}>⏹️ Recording rok dein</button> : <><button className="button button-primary" type="button" onClick={focusMessageInput}>✍️ Problem likhein</button><button className="button button-secondary" type="button" disabled={busy || recordingBusy} onClick={() => void startAudio()}>🎙️ Bolkar batayein</button></>}</div></div>}
+        {nextGuidedStep === "description" && <div className="chat-action-card guided-action-card"><p className="eyebrow">Agla step</p><h2>{draftDescription && !draftIssueType ? "Problem ka type batayein" : "Apni problem batayein"}</h2><p>{draftDescription && !draftIssueType ? "Neeche se type choose karein, ya ek shabd mein likh dein." : "Do line mein likh dein, ya mic dabakar bol dein. Main usse complaint ka draft bana dunga."}</p>{draftDescription && !draftIssueType && <div className="category-grid">{issueCategories.map((category) => <button key={category.code} className="category-choice" type="button" onClick={() => selectIssueType(category.code, category.label)}><span className="category-icon" aria-hidden="true">{category.icon}</span><span>{category.label}</span></button>)}</div>}<div className="guided-actions">{recording ? <button className="button button-primary full-width" type="button" disabled={recordingBusy} onClick={stopAudio}>⏹️ Recording rok dein</button> : <><button className="button button-primary" type="button" onClick={focusMessageInput}>✍️ Problem likhein</button><button className="button button-secondary" type="button" disabled={busy || recordingBusy} onClick={() => void startAudio()}>🎙️ Bolkar batayein</button></>}</div></div>}
         {nextGuidedStep === "location" && <div className="chat-action-card guided-action-card"><p className="eyebrow">Agla step</p><h2>Issue ki jagah share karein</h2><p>Isse complaint sahi department tak bhejne mein madad milegi. Aapka location sirf is complaint ke liye use hoga.</p><button className="button button-primary full-width" type="button" disabled={busy || locationBusy} onClick={captureLocation}>{locationBusy ? "📍 Location dhoondh rahe hain…" : "📍 Location share karein"}</button></div>}
         {nextGuidedStep === "photo" && <div className="chat-action-card guided-action-card"><p className="eyebrow">Agla step</p><h2>Issue ki ek photo lein</h2><p>Photo se officer ko problem turant samajhne mein madad milegi.</p><button className="button button-primary full-width" type="button" disabled={busy || cameraOpen} onClick={() => void openCamera()}>📷 Photo lein</button></div>}
         {nextGuidedStep === "photo_review" && <div className="chat-action-card guided-action-card"><p className="eyebrow">Photo review</p><h2>Photo ki jaanch chal rahi hai</h2><p>Photo save hai. Review complete hone par isi screen se status check karein—dobara photo lene ki zaroorat nahi.</p><button className="button button-primary full-width" type="button" disabled={busy} onClick={() => void refreshPhotoReview()}>{busy ? "Status dekha ja raha hai…" : "📷 Photo status dobara dekhein"}</button></div>}

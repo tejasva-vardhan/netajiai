@@ -84,14 +84,17 @@ class LocalCaptureAttestationVerifier:
 
 
 class LocalMediaInspector:
-    """Verify native fixtures and route browser captures to operator review."""
+    """Accept native fixtures and browser captures for the local profile.
+
+    Browser evidence stays labelled as browser capture. The evidence service
+    still honors ``WEB_CAPTURE_REVIEW_REQUIRED`` when that policy flag is on.
+    """
 
     def inspect(self, stored_object: object, asset: EvidenceAsset) -> InspectionResult:
         del stored_object
         if asset.capture_source.startswith("browser_"):
             return InspectionResult(
-                accepted=False,
-                review_required=True,
-                reason_codes=("browser_capture_review",),
+                accepted=True,
+                reason_codes=("browser_capture_local",),
             )
         return InspectionResult(accepted=asset.capture_source.startswith("native_"))

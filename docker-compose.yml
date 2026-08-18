@@ -85,6 +85,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000,http://127.0.0.1:3000
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - "9000:9000"
@@ -138,16 +139,24 @@ services:
   temporal:
     image: temporalio/temporal:1.8.1
     restart: unless-stopped
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/var/lib/temporal/temporal.db"]
+    # start-dev writes SQLite under this path. The image user is uid 1000,
+    # while a fresh named volume is root-owned, which surfaces as SQLite
+    # CANTOPEN / "out of memory (14)". Persist in the home directory and
+    # chown before exec so the non-root process can create the DB.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - mkdir -p /home/temporal/data && chown -R temporal:temporal /home/temporal/data && exec su temporal -s /bin/sh -c 'exec temporal server start-dev --ip 0.0.0.0 --db-filename /home/temporal/data/temporal.db'
     ports:
       - "7233:7233"
       - "8233:8233"
     volumes:
-      - temporal_data:/var/lib/temporal
+      - temporal_data:/home/temporal/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 7233"]
       interval: 5s
       timeout: 3s
+      start_period: 20s
       retries: 20
 
   migrate:
